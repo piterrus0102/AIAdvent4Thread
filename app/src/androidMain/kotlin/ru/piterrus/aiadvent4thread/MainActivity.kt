@@ -10,7 +10,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            App()
+            // Передаем значения из BuildConfig как default values
+            App(
+                defaultApiKey = BuildConfig.YANDEX_API_KEY,
+                defaultFolderId = BuildConfig.YANDEX_FOLDER_ID
+            )
         }
     }
 }
