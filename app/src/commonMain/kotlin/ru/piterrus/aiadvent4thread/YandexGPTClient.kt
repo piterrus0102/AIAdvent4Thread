@@ -37,6 +37,12 @@ data class YandexGPTResponse(
 )
 
 @Serializable
+data class YandexGPTFixedResponse(
+    val title: String,
+    val message: String,
+)
+
+@Serializable
 data class Result(
     val alternatives: List<Alternative>,
     val usage: Usage,
@@ -56,22 +62,9 @@ data class Usage(
     val totalTokens: Int
 )
 
-@Serializable
-data class YandexGPTError(
-    val code: Int? = null,
-    val message: String? = null,
-    val details: List<ErrorDetail>? = null
-)
-
-@Serializable
-data class ErrorDetail(
-    val type: String? = null,
-    val message: String? = null
-)
-
 class YandexGPTClient(
     private val apiKey: String,
-    private val catalogId: String
+    private val catalogId: String,
 ) {
     private val client = HttpClient {
         install(ContentNegotiation) {
@@ -90,17 +83,34 @@ class YandexGPTClient(
 
     suspend fun sendMessage(
         userMessage: String,
-        messageHistory: List<Message> = emptyList()
-    ): String {
+        messageHistory: List<Message> = emptyList(),
+        isFixedResponseEnabled: Boolean,
+        ): String {
         return try {
             // Создаем полную историю сообщений
             val allMessages = buildList {
                 // 1. Системный промпт (если еще не добавлен)
-                if (messageHistory.firstOrNull()?.role != "system") {
-                    add(Message(
-                        role = "system",
-                        text = "Ты полезный AI-ассистент. Отвечай на русском языке."
-                    ))
+                if (messageHistory.firstOrNull()?.role != "system" && isFixedResponseEnabled) {
+                    add(
+                        Message(
+                            role = "system",
+                            text = "Ты должен отвечать только в формате JSON без дополнительного текста. \n" +
+                                    "Формат ответа строго такой:\n" +
+                                    "\n" +
+                                    "{\n" +
+                                    "  \"title\": \"название фильма, книги, рецепта, имя, в общем название объекта\",\n" +
+                                    "  \"message\": \"подробное объекта\"\n" +
+                                    "}\n" +
+                                    "\n" +
+                                    "Где:\n" +
+                                    "- \"title\" — это краткое резюме ответа (1-5 слов),\n" +
+                                    "- \"message\" — это основной развернутый текст ответа.\n" +
+                                    "\n" +
+                                    "Не используй дополнительные поля. Можешь присылать в ответ массив таких объектов если их несколько\n" +
+                                    "Не добавляй пояснений, комментариев, markdown, или текста вне JSON.\n" +
+                                    "Если тебя спрашивают что-то, всё равно возвращай ответ только в указанном JSON формате."
+                        )
+                    )
                 }
                 
                 // 2. Вся предыдущая история
@@ -133,27 +143,12 @@ class YandexGPTClient(
             // Проверяем статус код
             when (httpResponse.status.value) {
                 200 -> {
-                    val response: YandexGPTResponse = httpResponse.body()
-                    response.result.alternatives.firstOrNull()?.message?.text ?: "Нет ответа от AI"
-                }
-                400 -> {
-                    val errorBody = httpResponse.bodyAsText()
-                    "❌ Ошибка 400: Неверный запрос.\nПроверьте Folder ID: $catalogId\n\nДетали: $errorBody"
-                }
-                401 -> {
-                    "❌ Ошибка 401: Неверный API ключ.\nПроверьте правильность ключа в local.properties"
-                }
-                403 -> {
-                    "❌ Ошибка 403: Доступ запрещен.\nУбедитесь что у сервисного аккаунта есть роль 'ai.languageModels.user'"
-                }
-                404 -> {
-                    "❌ Ошибка 404: Ресурс не найден.\nПроверьте:\n1. Folder ID: $catalogId\n2. Включен ли сервис YandexGPT в вашем каталоге"
-                }
-                429 -> {
-                    "❌ Ошибка 429: Превышен лимит запросов.\nПодождите немного и попробуйте снова."
-                }
-                500, 502, 503 -> {
-                    "❌ Ошибка ${httpResponse.status.value}: Проблемы на сервере Yandex.\nПопробуйте позже."
+                    if (isFixedResponseEnabled) {
+                        val response: YandexGPTFixedResponse = httpResponse.body()
+                    } else {
+                        val response: YandexGPTResponse = httpResponse.body()
+                        response.result.alternatives.firstOrNull()?.message?.text ?: "Нет ответа от AI"
+                    }
                 }
                 else -> {
                     val errorBody = httpResponse.bodyAsText()
