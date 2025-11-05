@@ -33,7 +33,15 @@ fun ChatScreenWithDatabase(
 ) {
     // Создаем базу данных и repository
     val database = remember { ChatDatabase.getDatabase(context) }
-    val repository = remember { ChatRepository(database.chatMessageDao()) }
+    val repository = remember { 
+        ChatRepository(
+            database.chatMessageDao(),
+            database.searchResultDao()
+        ) 
+    }
+    
+    // Менеджер настроек
+    val prefsManager = remember { PreferencesManager(context) }
     
     // Загружаем сообщения из БД
     val messagesFromDb by repository.allMessages.collectAsState(initial = emptyList())
@@ -41,8 +49,13 @@ fun ChatScreenWithDatabase(
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var currentMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
+    var isFixedResponseEnabled by remember { mutableStateOf(prefsManager.isFixedResponseEnabled) }
     
+    // Навигация
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
+    var shouldScrollToBottom by remember { mutableStateOf(false) }
+    
+    val coroutineScope = rememberCoroutineScope()
     val gptClient = remember { YandexGPTClient(apiKey, catalogId) }
     
     // Синхронизируем состояние с БД
@@ -52,62 +65,146 @@ fun ChatScreenWithDatabase(
         }
     }
     
-    // История для API
-    val apiMessageHistory = remember(messages) {
-        messages.map { chatMsg ->
-            Message(
-                role = if (chatMsg.isUser) "user" else "assistant",
-                text = chatMsg.text
+    when (currentScreen) {
+        is Screen.Chat -> {
+            ChatScreenUI(
+                messages = messages,
+                currentMessage = currentMessage,
+                isLoading = isLoading,
+                isFixedResponseEnabled = isFixedResponseEnabled,
+                onFixedResponseToggle = { 
+                    isFixedResponseEnabled = it
+                    prefsManager.isFixedResponseEnabled = it
+                },
+                onMessageChange = { currentMessage = it },
+                shouldScrollToBottom = shouldScrollToBottom,
+                onScrolledToBottom = { shouldScrollToBottom = false },
+                onSendMessage = {
+                    if (currentMessage.isNotBlank()) {
+                        val userMessage = currentMessage
+                        currentMessage = ""
+                        
+                        // Добавляем сообщение пользователя
+                        val newUserMsg = ChatMessage(
+                            text = userMessage,
+                            isUser = true,
+                            isFixedResponseEnabled = isFixedResponseEnabled
+                        )
+                        
+                        isLoading = true
+                        coroutineScope.launch {
+                            try {
+                                // Сохраняем в БД и обновляем с правильным id
+                                val userId = repository.saveMessage(newUserMsg)
+                                messages = messages + newUserMsg.copy(id = userId)
+                                
+                                // Формируем историю для API (БЕЗ последнего добавленного сообщения,
+                                // т.к. оно будет передано через userMessage)
+                                val apiMessageHistory = messages.map { chatMsg ->
+                                    Message(
+                                        role = if (chatMsg.isUser) "user" else "assistant",
+                                        text = chatMsg.text
+                                    )
+                                }
+                                
+                                // Отправляем с полной историей
+                                val result = gptClient.sendMessage(
+                                    userMessage = userMessage,
+                                    messageHistory = apiMessageHistory,
+                                    isFixedResponseEnabled = isFixedResponseEnabled
+                                )
+                                
+                                when (result) {
+                                    is ApiResult.Success -> {
+                                        when (val response = result.data) {
+                                            is MessageResponse.StandardResponse -> {
+                                                // Обычный ответ
+                                                val assistantMsg = ChatMessage(
+                                                    text = response.text,
+                                                    isUser = false,
+                                                    isFixedResponseEnabled = false
+                                                )
+                                                val messageId = repository.saveMessage(assistantMsg)
+                                                // Обновляем сообщение с правильным id
+                                                messages = messages + assistantMsg.copy(id = messageId)
+                                            }
+                                            is MessageResponse.FixedResponse -> {
+                                                // Ответ с результатами поиска
+                                                val assistantMsg = ChatMessage(
+                                                    text = "Получено результатов: ${response.results.size}",
+                                                    isUser = false,
+                                                    isFixedResponseEnabled = true,
+                                                    rawResponse = response.rawText
+                                                )
+                                                val messageId = repository.saveMessage(assistantMsg)
+                                                // Обновляем сообщение с правильным id
+                                                messages = messages + assistantMsg.copy(id = messageId)
+                                                
+                                                // Сохраняем результаты поиска
+                                                repository.saveSearchResults(messageId, response.results)
+                                                
+                                                // Автоматически переходим на экран результатов
+                                                currentScreen = Screen.SearchResults(messageId)
+                                            }
+                                        }
+                                    }
+                                    is ApiResult.Error -> {
+                                        // Ошибка
+                                        val errorMsg = ChatMessage(
+                                            text = result.message,
+                                            isUser = false,
+                                            isFixedResponseEnabled = false
+                                        )
+                                        val messageId = repository.saveMessage(errorMsg)
+                                        messages = messages + errorMsg.copy(id = messageId)
+                                    }
+                                }
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    }
+                },
+                onClearHistory = {
+                    messages = emptyList()
+                    coroutineScope.launch {
+                        repository.clearHistory()
+                    }
+                },
+                onMessageClick = { message ->
+                    // Переход на экран результатов при клике на сообщение
+                    if (!message.isUser && message.isFixedResponseEnabled && message.id > 0) {
+                        currentScreen = Screen.SearchResults(message.id)
+                    }
+                }
+            )
+        }
+        
+        is Screen.SearchResults -> {
+            val messageId = (currentScreen as Screen.SearchResults).messageId
+            val searchResults by repository.getSearchResults(messageId).collectAsState(initial = emptyList())
+            
+            // Получаем сообщение с raw response
+            var rawResponse by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(messageId) {
+                rawResponse = repository.getMessageById(messageId)?.rawResponse
+            }
+            
+            SearchResultsScreen(
+                results = searchResults,
+                rawResponse = rawResponse,
+                onBackClick = {
+                    currentScreen = Screen.Chat
+                    shouldScrollToBottom = true
+                }
             )
         }
     }
-    
-    ChatScreenUI(
-        messages = messages,
-        currentMessage = currentMessage,
-        isLoading = isLoading,
-        onMessageChange = { currentMessage = it },
-        onSendMessage = {
-            if (currentMessage.isNotBlank()) {
-                val userMessage = currentMessage
-                currentMessage = ""
-                
-                // Добавляем сообщение пользователя
-                val newUserMsg = ChatMessage(userMessage, true)
-                messages = messages + newUserMsg
-                
-                // Сохраняем в БД
-                coroutineScope.launch {
-                    repository.saveMessage(newUserMsg)
-                }
-                
-                isLoading = true
-                coroutineScope.launch {
-                    try {
-                        // Отправляем с полной историей
-                        val response = gptClient.sendMessage(
-                            userMessage = userMessage,
-                            messageHistory = apiMessageHistory
-                        )
-                        
-                        // Добавляем ответ ассистента
-                        val assistantMsg = ChatMessage(response, false)
-                        messages = messages + assistantMsg
-                        
-                        // Сохраняем в БД
-                        repository.saveMessage(assistantMsg)
-                    } finally {
-                        isLoading = false
-                    }
-                }
-            }
-        },
-        onClearHistory = {
-            messages = emptyList()
-            coroutineScope.launch {
-                repository.clearHistory()
-            }
-        }
-    )
+}
+
+// Sealed class для навигации
+sealed class Screen {
+    object Chat : Screen()
+    data class SearchResults(val messageId: Long) : Screen()
 }
 

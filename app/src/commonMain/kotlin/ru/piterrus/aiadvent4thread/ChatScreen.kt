@@ -17,37 +17,72 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 data class ChatMessage(
+    val id: Long = 0,
     val text: String,
     val isUser: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val isFixedResponseEnabled: Boolean = false,
+    val rawResponse: String? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreenUI(
+    modifier: Modifier = Modifier,
     messages: List<ChatMessage>,
     currentMessage: String,
     isLoading: Boolean,
+    isFixedResponseEnabled: Boolean,
+    onFixedResponseToggle: (Boolean) -> Unit,
     onMessageChange: (String) -> Unit,
     onSendMessage: () -> Unit,
     onClearHistory: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onMessageClick: (ChatMessage) -> Unit = {},
+    shouldScrollToBottom: Boolean = false,
+    onScrolledToBottom: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    
+    // Автоскролл вниз при изменении количества сообщений
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+    
+    // Дополнительный автоскролл вниз при необходимости (например, при возврате)
+    LaunchedEffect(shouldScrollToBottom) {
+        if (shouldScrollToBottom && messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+            onScrolledToBottom()
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
+                    // Switch для включения режима FixedResponse - слева
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("💬")
+                        Switch(
+                            checked = isFixedResponseEnabled,
+                            onCheckedChange = onFixedResponseToggle,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFFF7F50), // Коралловый
+                                uncheckedThumbColor = Color.White.copy(alpha = 0.7f),
+                                uncheckedTrackColor = Color.Gray
+                            )
+                        )
                         Text(
-                            "AIAdvent4Chat",
-                            fontWeight = FontWeight.Bold
+                            "Режим поиска",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White
                         )
                     }
                 },
@@ -58,9 +93,9 @@ fun ChatScreenUI(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = Color(0xFF6A0DAD), // Фиолетовый
+                    titleContentColor = Color.White,
+                    actionIconContentColor = Color.White
                 )
             )
         }
@@ -68,12 +103,13 @@ fun ChatScreenUI(
         Column(
             modifier = modifier
                 .fillMaxSize()
+                .statusBarsPadding() // Всегда отступ от status bar
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF69F0AE),
-                            Color(0xFF00E676),
-                            Color(0xFF00C853)
+                            Color(0xFF6A0DAD), // Фиолетовый
+                            Color(0xFF8B3FA8), // Промежуточный
+                            Color(0xFFFF7F50)  // Коралловый
                         )
                     )
                 )
@@ -90,7 +126,10 @@ fun ChatScreenUI(
             ) {
                 
                 items(messages) { message ->
-                    MessageBubble(message)
+                    MessageBubble(
+                        message = message,
+                        onClick = { onMessageClick(message) }
+                    )
                 }
                 
                 if (isLoading) {
@@ -109,7 +148,8 @@ fun ChatScreenUI(
 
             // Поле ввода с градиентом
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth(),
                 shadowElevation = 8.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
@@ -158,8 +198,10 @@ fun ChatScreenUI(
                             .widthIn(min = 100.dp),
                         shape = RoundedCornerShape(20.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
+                            containerColor = Color(0xFF6A0DAD), // Фиолетовый
+                            contentColor = Color.White,
+                            disabledContainerColor = Color(0xFF6A0DAD).copy(alpha = 0.5f),
+                            disabledContentColor = Color.White.copy(alpha = 0.5f)
                         )
                     ) {
                         Text("📤 Отправить", fontWeight = FontWeight.Bold)
@@ -171,7 +213,10 @@ fun ChatScreenUI(
 }
 
 @Composable
-fun MessageBubble(message: ChatMessage) {
+fun MessageBubble(
+    message: ChatMessage,
+    onClick: () -> Unit = {}
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
@@ -183,15 +228,15 @@ fun MessageBubble(message: ChatMessage) {
                     brush = if (message.isUser) {
                         Brush.linearGradient(
                             colors = listOf(
-                                Color(0xFF00E676),
-                                Color(0xFF00C853)
+                                Color(0xFF6A0DAD), // Фиолетовый
+                                Color(0xFF8B3FA8)  // Темнее фиолетовый
                             )
                         )
                     } else {
                         Brush.linearGradient(
                             colors = listOf(
                                 Color(0xFFFFFFFF),
-                                Color(0xFFF1F1F1)
+                                Color(0xFFF5F5F5)
                             )
                         )
                     },
@@ -221,20 +266,54 @@ fun MessageBubble(message: ChatMessage) {
                         color = if (message.isUser) {
                             Color.White
                         } else {
-                            Color(0xFF00695C)
+                            Color(0xFF6A0DAD) // Фиолетовый
                         }
                     )
                 }
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (message.isUser) {
-                        Color.White
-                    } else {
-                        Color(0xFF004D40)
+                
+                // Если сообщение с включенным режимом поиска, показываем кликабельную ссылку
+                if (!message.isUser && message.isFixedResponseEnabled) {
+                    Surface(
+                        onClick = onClick,
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFF7F50), // Коралловый
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "🔍",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "результаты поиска",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "▶",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White
+                            )
+                        }
                     }
-                )
+                } else {
+                    // Обычное текстовое сообщение
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (message.isUser) {
+                            Color.White
+                        } else {
+                            Color(0xFF333333) // Темно-серый для лучшей читаемости
+                        }
+                    )
+                }
             }
         }
     }
