@@ -42,6 +42,21 @@ data class YandexGPTFixedResponse(
     val message: String,
 )
 
+// Результат работы sendMessage
+sealed class ApiResult<out T> {
+    data class Success<T>(val data: T) : ApiResult<T>()
+    data class Error(val message: String) : ApiResult<Nothing>()
+}
+
+// Типы ответов от сервера
+sealed class MessageResponse {
+    data class StandardResponse(val text: String) : MessageResponse()
+    data class FixedResponse(
+        val results: List<YandexGPTFixedResponse>,
+        val rawText: String
+    ) : MessageResponse()
+}
+
 @Serializable
 data class Result(
     val alternatives: List<Alternative>,
@@ -66,14 +81,16 @@ class YandexGPTClient(
     private val apiKey: String,
     private val catalogId: String,
 ) {
+    private val jsonParser = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        prettyPrint = true
+        encodeDefaults = true
+    }
+    
     private val client = HttpClient {
         install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-                prettyPrint = true
-                encodeDefaults = true  // ВАЖНО! Включаем поля с default значениями
-            })
+            json(jsonParser)
         }
         install(Logging) {
             logger = Logger.DEFAULT
@@ -84,8 +101,8 @@ class YandexGPTClient(
     suspend fun sendMessage(
         userMessage: String,
         messageHistory: List<Message> = emptyList(),
-        isFixedResponseEnabled: Boolean,
-        ): String {
+        isFixedResponseEnabled: Boolean = false,
+    ): ApiResult<MessageResponse> {
         return try {
             // Создаем полную историю сообщений
             val allMessages = buildList {
@@ -143,25 +160,44 @@ class YandexGPTClient(
             // Проверяем статус код
             when (httpResponse.status.value) {
                 200 -> {
+                    val response: YandexGPTResponse = httpResponse.body()
+                    val text = response.result.alternatives.firstOrNull()?.message?.text ?: "Нет ответа от AI"
+                    
                     if (isFixedResponseEnabled) {
-                        val response: YandexGPTFixedResponse = httpResponse.body()
+                        try {
+                            // В режиме FixedResponse текст ответа содержит JSON
+                            // Очищаем от markdown форматирования (```json ... ``` или ``` ... ```)
+                            val cleanedText = text
+                                .replace("```json", "")
+                                .replace("```", "")
+                                .trim()
+                            
+                            // Пытаемся распарсить как массив
+                            val results: List<YandexGPTFixedResponse> = try {
+                                jsonParser.decodeFromString(cleanedText)
+                            } catch (e: Exception) {
+                                // Если не массив, пробуем как один объект
+                                val singleResult: YandexGPTFixedResponse = jsonParser.decodeFromString(cleanedText)
+                                listOf(singleResult)
+                            }
+                            // Сохраняем сырой текст для отладки
+                            ApiResult.Success(MessageResponse.FixedResponse(results, rawText = text))
+                        } catch (e: Exception) {
+                            ApiResult.Error("❌ Ошибка парсинга FixedResponse: ${e.message}\n\nПолучен текст:\n$text")
+                        }
                     } else {
-                        val response: YandexGPTResponse = httpResponse.body()
-                        response.result.alternatives.firstOrNull()?.message?.text ?: "Нет ответа от AI"
+                        ApiResult.Success(MessageResponse.StandardResponse(text))
                     }
                 }
                 else -> {
                     val errorBody = httpResponse.bodyAsText()
-                    "❌ Неизвестная ошибка ${httpResponse.status.value}\n\n$errorBody"
+                    ApiResult.Error("❌ Неизвестная ошибка ${httpResponse.status.value}\n\n$errorBody")
                 }
             }
         } catch (e: Exception) {
-            "❌ Ошибка подключения: ${e.message}\n\nПроверьте:\n• Интернет соединение\n• Правильность API ключа\n• Folder ID"
+            e.printStackTrace()
+            ApiResult.Error("❌ Ошибка подключения: ${e.message}\n\nПроверьте:\n• Интернет соединение\n• Правильность API ключа\n• Folder ID")
         }
-    }
-
-    fun close() {
-        client.close()
     }
 }
 
