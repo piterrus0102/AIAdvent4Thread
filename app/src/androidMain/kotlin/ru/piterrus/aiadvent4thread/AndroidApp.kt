@@ -49,7 +49,7 @@ fun ChatScreenWithDatabase(
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var currentMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    var isFixedResponseEnabled by remember { mutableStateOf(prefsManager.isFixedResponseEnabled) }
+    var responseMode by remember { mutableStateOf(prefsManager.responseMode) }
     
     // Навигация
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
@@ -71,10 +71,10 @@ fun ChatScreenWithDatabase(
                 messages = messages,
                 currentMessage = currentMessage,
                 isLoading = isLoading,
-                isFixedResponseEnabled = isFixedResponseEnabled,
-                onFixedResponseToggle = { 
-                    isFixedResponseEnabled = it
-                    prefsManager.isFixedResponseEnabled = it
+                responseMode = responseMode,
+                onResponseModeToggle = { 
+                    responseMode = it
+                    prefsManager.responseMode = it
                 },
                 onMessageChange = { currentMessage = it },
                 shouldScrollToBottom = shouldScrollToBottom,
@@ -88,7 +88,7 @@ fun ChatScreenWithDatabase(
                         val newUserMsg = ChatMessage(
                             text = userMessage,
                             isUser = true,
-                            isFixedResponseEnabled = isFixedResponseEnabled
+                            responseMode = responseMode
                         )
                         
                         isLoading = true
@@ -111,7 +111,7 @@ fun ChatScreenWithDatabase(
                                 val result = gptClient.sendMessage(
                                     userMessage = userMessage,
                                     messageHistory = apiMessageHistory,
-                                    isFixedResponseEnabled = isFixedResponseEnabled
+                                    responseMode = responseMode
                                 )
                                 
                                 when (result) {
@@ -122,18 +122,18 @@ fun ChatScreenWithDatabase(
                                                 val assistantMsg = ChatMessage(
                                                     text = response.text,
                                                     isUser = false,
-                                                    isFixedResponseEnabled = false
+                                                    responseMode = ResponseMode.DEFAULT
                                                 )
                                                 val messageId = repository.saveMessage(assistantMsg)
                                                 // Обновляем сообщение с правильным id
                                                 messages = messages + assistantMsg.copy(id = messageId)
                                             }
                                             is MessageResponse.FixedResponse -> {
-                                                // Ответ с результатами поиска
+                                                // Ответ с результатами поиска или задачами
                                                 val assistantMsg = ChatMessage(
                                                     text = "Получено результатов: ${response.results.size}",
                                                     isUser = false,
-                                                    isFixedResponseEnabled = true,
+                                                    responseMode = responseMode,
                                                     rawResponse = response.rawText
                                                 )
                                                 val messageId = repository.saveMessage(assistantMsg)
@@ -153,7 +153,7 @@ fun ChatScreenWithDatabase(
                                         val errorMsg = ChatMessage(
                                             text = result.message,
                                             isUser = false,
-                                            isFixedResponseEnabled = false
+                                            responseMode = ResponseMode.DEFAULT
                                         )
                                         val messageId = repository.saveMessage(errorMsg)
                                         messages = messages + errorMsg.copy(id = messageId)
@@ -173,7 +173,7 @@ fun ChatScreenWithDatabase(
                 },
                 onMessageClick = { message ->
                     // Переход на экран результатов при клике на сообщение
-                    if (!message.isUser && message.isFixedResponseEnabled && message.id > 0) {
+                    if (!message.isUser && (message.responseMode == ResponseMode.FIXED_RESPONSE_ENABLED || message.responseMode == ResponseMode.TASK) && message.id > 0) {
                         currentScreen = Screen.SearchResults(message.id)
                     }
                 }
