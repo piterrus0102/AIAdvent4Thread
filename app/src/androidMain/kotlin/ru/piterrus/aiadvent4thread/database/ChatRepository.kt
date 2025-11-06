@@ -3,6 +3,7 @@ package ru.piterrus.aiadvent4thread.database
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import ru.piterrus.aiadvent4thread.ChatMessage
+import ru.piterrus.aiadvent4thread.ResponseMode
 import ru.piterrus.aiadvent4thread.YandexGPTFixedResponse
 
 class ChatRepository(
@@ -18,7 +19,7 @@ class ChatRepository(
                 text = entity.text,
                 isUser = entity.isUser,
                 timestamp = entity.timestamp,
-                isFixedResponseEnabled = entity.isFixedResponseEnabled,
+                responseMode = ResponseMode.fromInt(entity.responseMode),
                 rawResponse = entity.rawResponse
             )
         }
@@ -31,7 +32,7 @@ class ChatRepository(
             text = message.text,
             isUser = message.isUser,
             timestamp = message.timestamp,
-            isFixedResponseEnabled = message.isFixedResponseEnabled,
+            responseMode = message.responseMode.value,
             rawResponse = message.rawResponse
         )
         return messageDao.insertMessage(entity)
@@ -69,7 +70,7 @@ class ChatRepository(
                 text = entity.text,
                 isUser = entity.isUser,
                 timestamp = entity.timestamp,
-                isFixedResponseEnabled = entity.isFixedResponseEnabled,
+                responseMode = ResponseMode.fromInt(entity.responseMode),
                 rawResponse = entity.rawResponse
             )
         }

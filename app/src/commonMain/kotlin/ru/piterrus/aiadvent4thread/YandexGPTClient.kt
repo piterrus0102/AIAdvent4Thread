@@ -101,33 +101,74 @@ class YandexGPTClient(
     suspend fun sendMessage(
         userMessage: String,
         messageHistory: List<Message> = emptyList(),
-        isFixedResponseEnabled: Boolean = false,
+        responseMode: ResponseMode = ResponseMode.DEFAULT,
     ): ApiResult<MessageResponse> {
         return try {
             // Создаем полную историю сообщений
             val allMessages = buildList {
                 // 1. Системный промпт (если еще не добавлен)
-                if (messageHistory.firstOrNull()?.role != "system" && isFixedResponseEnabled) {
-                    add(
-                        Message(
-                            role = "system",
-                            text = "Ты должен отвечать только в формате JSON без дополнительного текста. \n" +
-                                    "Формат ответа строго такой:\n" +
-                                    "\n" +
-                                    "{\n" +
-                                    "  \"title\": \"название фильма, книги, рецепта, имя, в общем название объекта\",\n" +
-                                    "  \"message\": \"подробное объекта\"\n" +
-                                    "}\n" +
-                                    "\n" +
-                                    "Где:\n" +
-                                    "- \"title\" — это краткое резюме ответа (1-5 слов),\n" +
-                                    "- \"message\" — это основной развернутый текст ответа.\n" +
-                                    "\n" +
-                                    "Не используй дополнительные поля. Можешь присылать в ответ массив таких объектов если их несколько\n" +
-                                    "Не добавляй пояснений, комментариев, markdown, или текста вне JSON.\n" +
-                                    "Если тебя спрашивают что-то, всё равно возвращай ответ только в указанном JSON формате."
-                        )
-                    )
+                if (messageHistory.firstOrNull()?.role != "system") {
+                    when (responseMode) {
+                        ResponseMode.DEFAULT -> {
+                            // Для default режима ничего не добавляем
+                        }
+                        ResponseMode.FIXED_RESPONSE_ENABLED -> {
+                            add(
+                                Message(
+                                    role = "system",
+                                    text = "Ты должен отвечать только в формате JSON без дополнительного текста. \n" +
+                                            "Формат ответа строго такой:\n" +
+                                            "\n" +
+                                            "{\n" +
+                                            "  \"title\": \"название фильма, книги, рецепта, имя, в общем название объекта\",\n" +
+                                            "  \"message\": \"подробное объекта\"\n" +
+                                            "}\n" +
+                                            "\n" +
+                                            "Где:\n" +
+                                            "- \"title\" — это краткое резюме ответа (1-5 слов),\n" +
+                                            "- \"message\" — это основной развернутый текст ответа.\n" +
+                                            "\n" +
+                                            "Не используй дополнительные поля. Можешь присылать в ответ массив таких объектов если их несколько\n" +
+                                            "Не добавляй пояснений, комментариев, markdown, или текста вне JSON.\n" +
+                                            "Если тебя спрашивают что-то, всё равно возвращай ответ только в указанном JSON формате."
+                                )
+                            )
+                        }
+
+                        ResponseMode.TASK -> {
+                            add(
+                                Message(
+                                    role = "system",
+                                    text = "Ты — модель, которая собирает информацию у пользователя для формирования итогового результата (история, сценарий, ТЗ и т.д.).\n" +
+                                            "\n" +
+                                            "Твоя задача — задавать по одному уточняющему вопросу за одно сообщение.\n" +
+                                            "НЕ ИМЕЙ ПРАВА:\n" +
+                                            "- писать ответы за пользователя,\n" +
+                                            "- придумывать или дополнять за пользователя,\n" +
+                                            "- симулировать диалог вида «Пользователь: … Ассистент: …»,\n" +
+                                            "- описывать свои действия в скобках (например: \"(создаёт историю)\", \"(думает)\", \"(формирует вывод)\"),\n" +
+                                            "- использовать фразы \"могу представить\", \"хотите представлю?\" и похожие.\n" +
+                                            "\n" +
+                                            "Когда ты соберёшь достаточно данных, ты скажешь ровно одну фразу:\n" +
+                                            "**\"Я собрал(а) все необходимые сведения. Перехожу к созданию результата.\"**\n" +
+                                            "\n" +
+                                            "После этой фразы ты:\n" +
+                                            "1) СРАЗУ пишешь итоговый результат полностью,\n" +
+                                            "2) Без вступлений, без пояснений, без описания процесса,\n" +
+                                            "3) Без скобок, без режима «как будто»,\n" +
+                                            "4) Просто даёшь тот текст, который должен быть результатом.\n" +
+                                            "\n" +
+                                            "ЕСЛИ ты не уверена, что данных достаточно — ЗАДАЙ ЕЩЁ ОДИН ВОПРОС.\n" +
+                                            "Не заканчивай сбор данных раньше времени.\n" +
+                                            "\n" +
+                                            "В каждом своём сообщении — строго ОДИН вопрос.\n" +
+                                            "\n" +
+                                            "Начни с вопроса:\n" +
+                                            "\"Какой итоговый результат ты хочешь получить?\""
+                                )
+                            )
+                        }
+                    }
                 }
                 
                 // 2. Вся предыдущая история
@@ -139,9 +180,16 @@ class YandexGPTClient(
                     text = userMessage
                 ))
             }
-            
+            val modelUri = when (responseMode) {
+                ResponseMode.TASK -> {
+                    "gpt://$catalogId/yandexgpt/latest"
+                }
+                else -> {
+                    "gpt://$catalogId/yandexgpt-lite/latest"
+                }
+            }
             val request = YandexGPTRequest(
-                modelUri = "gpt://$catalogId/yandexgpt-lite/latest",
+                modelUri = modelUri,
                 completionOptions = CompletionOptions(
                     stream = false,
                     temperature = 0.6,
@@ -163,9 +211,9 @@ class YandexGPTClient(
                     val response: YandexGPTResponse = httpResponse.body()
                     val text = response.result.alternatives.firstOrNull()?.message?.text ?: "Нет ответа от AI"
                     
-                    if (isFixedResponseEnabled) {
+                    if (responseMode == ResponseMode.FIXED_RESPONSE_ENABLED) {
                         try {
-                            // В режиме FixedResponse текст ответа содержит JSON
+                            // В режиме FixedResponse или TASK текст ответа содержит JSON
                             // Очищаем от markdown форматирования (```json ... ``` или ``` ... ```)
                             val cleanedText = text
                                 .replace("```json", "")
@@ -183,7 +231,7 @@ class YandexGPTClient(
                             // Сохраняем сырой текст для отладки
                             ApiResult.Success(MessageResponse.FixedResponse(results, rawText = text))
                         } catch (e: Exception) {
-                            ApiResult.Error("❌ Ошибка парсинга FixedResponse: ${e.message}\n\nПолучен текст:\n$text")
+                            ApiResult.Error("❌ Ошибка парсинга JSON: ${e.message}\n\nПолучен текст:\n$text")
                         }
                     } else {
                         ApiResult.Success(MessageResponse.StandardResponse(text))

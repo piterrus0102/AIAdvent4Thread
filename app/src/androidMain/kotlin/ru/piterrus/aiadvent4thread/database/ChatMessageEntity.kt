@@ -10,7 +10,7 @@ data class ChatMessageEntity(
     val text: String,
     val isUser: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
-    val isFixedResponseEnabled: Boolean = false,
+    val responseMode: Int = 0,
     val rawResponse: String? = null
 )
 

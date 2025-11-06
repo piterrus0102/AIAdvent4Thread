@@ -10,13 +10,13 @@ class PreferencesManager(context: Context) {
     )
     
     companion object {
-        private const val KEY_FIXED_RESPONSE_ENABLED = "fixed_response_enabled"
+        private const val KEY_RESPONSE_MODE = "response_mode"
     }
     
-    var isFixedResponseEnabled: Boolean
-        get() = prefs.getBoolean(KEY_FIXED_RESPONSE_ENABLED, false)
+    var responseMode: ResponseMode
+        get() = ResponseMode.fromInt(prefs.getInt(KEY_RESPONSE_MODE, 0))
         set(value) {
-            prefs.edit().putBoolean(KEY_FIXED_RESPONSE_ENABLED, value).apply()
+            prefs.edit().putInt(KEY_RESPONSE_MODE, value.value).apply()
         }
 }
 

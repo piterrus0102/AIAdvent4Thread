@@ -21,7 +21,7 @@ data class ChatMessage(
     val text: String,
     val isUser: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
-    val isFixedResponseEnabled: Boolean = false,
+    val responseMode: ResponseMode = ResponseMode.DEFAULT,
     val rawResponse: String? = null
 )
 
@@ -32,8 +32,8 @@ fun ChatScreenUI(
     messages: List<ChatMessage>,
     currentMessage: String,
     isLoading: Boolean,
-    isFixedResponseEnabled: Boolean,
-    onFixedResponseToggle: (Boolean) -> Unit,
+    responseMode: ResponseMode,
+    onResponseModeToggle: (ResponseMode) -> Unit,
     onMessageChange: (String) -> Unit,
     onSendMessage: () -> Unit,
     onClearHistory: () -> Unit = {},
@@ -63,27 +63,62 @@ fun ChatScreenUI(
         topBar = {
             TopAppBar(
                 title = { 
-                    // Switch для включения режима FixedResponse - слева
+                    // Переключатель режимов
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Switch(
-                            checked = isFixedResponseEnabled,
-                            onCheckedChange = onFixedResponseToggle,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFFFF7F50), // Коралловый
-                                uncheckedThumbColor = Color.White.copy(alpha = 0.7f),
-                                uncheckedTrackColor = Color.Gray
+                        // Кнопка DEFAULT
+                        Surface(
+                            onClick = { onResponseModeToggle(ResponseMode.DEFAULT) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (responseMode == ResponseMode.DEFAULT) 
+                                Color(0xFFFF7F50) else Color.White.copy(alpha = 0.3f),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                "💬 Чат",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp),
+                                fontWeight = if (responseMode == ResponseMode.DEFAULT) FontWeight.Bold else FontWeight.Normal
                             )
-                        )
-                        Text(
-                            "Режим поиска",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color.White
-                        )
+                        }
+                        
+                        // Кнопка FIXED_RESPONSE_ENABLED
+                        Surface(
+                            onClick = { onResponseModeToggle(ResponseMode.FIXED_RESPONSE_ENABLED) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (responseMode == ResponseMode.FIXED_RESPONSE_ENABLED) 
+                                Color(0xFFFF7F50) else Color.White.copy(alpha = 0.3f),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                "🔍 Поиск",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp),
+                                fontWeight = if (responseMode == ResponseMode.FIXED_RESPONSE_ENABLED) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                        
+                        // Кнопка TASK
+                        Surface(
+                            onClick = { onResponseModeToggle(ResponseMode.TASK) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (responseMode == ResponseMode.TASK) 
+                                Color(0xFFFF7F50) else Color.White.copy(alpha = 0.3f),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                "📋 Задачи",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp),
+                                fontWeight = if (responseMode == ResponseMode.TASK) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -272,8 +307,8 @@ fun MessageBubble(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 
-                // Если сообщение с включенным режимом поиска, показываем кликабельную ссылку
-                if (!message.isUser && message.isFixedResponseEnabled) {
+                // Если сообщение с включенным режимом поиска или задач, показываем кликабельную ссылку
+                if (!message.isUser && (message.responseMode == ResponseMode.FIXED_RESPONSE_ENABLED || message.responseMode == ResponseMode.TASK)) {
                     Surface(
                         onClick = onClick,
                         shape = RoundedCornerShape(12.dp),
@@ -286,11 +321,19 @@ fun MessageBubble(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "🔍",
+                                text = when (message.responseMode) {
+                                    ResponseMode.FIXED_RESPONSE_ENABLED -> "🔍"
+                                    ResponseMode.TASK -> "📋"
+                                    else -> "🔍"
+                                },
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "результаты поиска",
+                                text = when (message.responseMode) {
+                                    ResponseMode.FIXED_RESPONSE_ENABLED -> "результаты поиска"
+                                    ResponseMode.TASK -> "задачи"
+                                    else -> "результаты"
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
