@@ -40,6 +40,7 @@ fun ChatScreenUI(
     onMessageClick: (ChatMessage) -> Unit = {},
     shouldScrollToBottom: Boolean = false,
     onScrolledToBottom: () -> Unit = {},
+    onNavigateToDiscussion: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -122,6 +123,10 @@ fun ChatScreenUI(
                     }
                 },
                 actions = {
+                    // Кнопка экспертной дискуссии
+                    IconButton(onClick = onNavigateToDiscussion) {
+                        Text("🎭", style = MaterialTheme.typography.titleLarge)
+                    }
                     // Кнопка очистки истории
                     IconButton(onClick = onClearHistory) {
                         Text("🗑️", style = MaterialTheme.typography.titleLarge)
