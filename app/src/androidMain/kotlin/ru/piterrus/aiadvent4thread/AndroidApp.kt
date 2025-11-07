@@ -55,6 +55,9 @@ fun ChatScreenWithDatabase(
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
     var shouldScrollToBottom by remember { mutableStateOf(false) }
     
+    // Состояние экрана дискуссии для сохранения позиции скролла
+    var discussionState by remember { mutableStateOf<DiscussionState?>(null) }
+    
     val coroutineScope = rememberCoroutineScope()
     val gptClient = remember { YandexGPTClient(apiKey, catalogId) }
     
@@ -79,6 +82,9 @@ fun ChatScreenWithDatabase(
                 onMessageChange = { currentMessage = it },
                 shouldScrollToBottom = shouldScrollToBottom,
                 onScrolledToBottom = { shouldScrollToBottom = false },
+                onNavigateToDiscussion = {
+                    currentScreen = Screen.Discussion
+                },
                 onSendMessage = {
                     if (currentMessage.isNotBlank()) {
                         val userMessage = currentMessage
@@ -199,6 +205,34 @@ fun ChatScreenWithDatabase(
                 }
             )
         }
+        
+        is Screen.Discussion -> {
+            DiscussionScreen(
+                onBackClick = {
+                    currentScreen = Screen.Chat
+                    shouldScrollToBottom = true
+                },
+                gptClient = gptClient,
+                onExpertClick = { expert, expertNumber ->
+                    currentScreen = Screen.ExpertDetail(expert, expertNumber)
+                },
+                savedState = discussionState,
+                onStateChange = { state ->
+                    discussionState = state
+                }
+            )
+        }
+        
+        is Screen.ExpertDetail -> {
+            val expertDetail = currentScreen as Screen.ExpertDetail
+            ExpertDetailScreen(
+                expert = expertDetail.expert,
+                expertNumber = expertDetail.expertNumber,
+                onBackClick = {
+                    currentScreen = Screen.Discussion
+                }
+            )
+        }
     }
 }
 
@@ -206,5 +240,7 @@ fun ChatScreenWithDatabase(
 sealed class Screen {
     object Chat : Screen()
     data class SearchResults(val messageId: Long) : Screen()
+    object Discussion : Screen()
+    data class ExpertDetail(val expert: ExpertRole, val expertNumber: Int) : Screen()
 }
 
