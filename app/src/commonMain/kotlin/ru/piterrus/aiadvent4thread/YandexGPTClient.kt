@@ -55,7 +55,16 @@ sealed class MessageResponse {
         val results: List<YandexGPTFixedResponse>,
         val rawText: String
     ) : MessageResponse()
+    data class TemperatureComparisonResponse(
+        val results: List<TemperatureResult>
+    ) : MessageResponse()
 }
+
+data class TemperatureResult(
+    val temperature: Double,
+    val text: String,
+    val shortQuery: String
+)
 
 @Serializable
 data class Result(
@@ -102,6 +111,7 @@ class YandexGPTClient(
         userMessage: String,
         messageHistory: List<Message> = emptyList(),
         responseMode: ResponseMode = ResponseMode.DEFAULT,
+        temperature: Double = 0.6,
     ): ApiResult<MessageResponse> {
         return try {
             // Создаем полную историю сообщений
@@ -129,6 +139,20 @@ class YandexGPTClient(
                                 )
                             )
                         }
+                        
+                        ResponseMode.TEMPERATURE_COMPARISON -> {
+                            // Для режима сравнения температур добавляем промпт о четкости
+                            add(
+                                Message(
+                                    role = "system",
+                                    text = "Ты — универсальный AI-ассистент. \n" +
+                                            "Ответь на запрос пользователя ясно и полно, в свободной форме, без ограничения стиля. \n" +
+                                            "Используй свои собственные ассоциации, знания и стиль изложения. \n" +
+                                            "Не упоминай, что ты AI. Просто дай естественный, цельный ответ на вопрос.\n" +
+                                            "Ответ не должен содержать более 400 символов"
+                                )
+                            )
+                        }
                     }
                 }
                 
@@ -142,7 +166,7 @@ class YandexGPTClient(
                 ))
             }
             val modelUri = when (responseMode) {
-                ResponseMode.TASK -> {
+                ResponseMode.TASK, ResponseMode.TEMPERATURE_COMPARISON -> {
                     "gpt://$catalogId/yandexgpt/latest"
                 }
                 else -> {
@@ -153,7 +177,7 @@ class YandexGPTClient(
                 modelUri = modelUri,
                 completionOptions = CompletionOptions(
                     stream = false,
-                    temperature = 0.6,
+                    temperature = temperature,
                     maxTokens = 2000
                 ),
                 messages = allMessages
@@ -172,7 +196,7 @@ class YandexGPTClient(
                     val response: YandexGPTResponse = httpResponse.body()
                     val text = response.result.alternatives.firstOrNull()?.message?.text ?: "Нет ответа от AI"
                     
-                    if (responseMode == ResponseMode.FIXED_RESPONSE_ENABLED) {
+                    if (responseMode == ResponseMode.FIXED_RESPONSE_ENABLED || responseMode == ResponseMode.TASK) {
                         try {
                             // В режиме FixedResponse или TASK текст ответа содержит JSON
                             // Очищаем от markdown форматирования (```json ... ``` или ``` ... ```)
@@ -206,6 +230,71 @@ class YandexGPTClient(
         } catch (e: Exception) {
             e.printStackTrace()
             ApiResult.Error("❌ Ошибка подключения: ${e.message}\n\nПроверьте:\n• Интернет соединение\n• Правильность API ключа\n• Folder ID")
+        }
+    }
+    
+    suspend fun sendMessageWithTemperatureComparison(
+        userMessage: String,
+        messageHistory: List<Message> = emptyList()
+    ): ApiResult<MessageResponse> {
+        return try {
+            println("🌡️ Начинаем сравнение температур для запроса: $userMessage")
+            
+            // Создаем короткое описание запроса (первые 50 символов)
+            val shortQuery = if (userMessage.length > 50) {
+                userMessage.take(50) + "..."
+            } else {
+                userMessage
+            }
+            
+            val temperatures = listOf(0.0, 0.5, 1.0)
+            val results = mutableListOf<TemperatureResult>()
+            
+            // Последовательно отправляем запросы с разными температурами
+            for (temp in temperatures) {
+                println("🌡️ Отправляем запрос с температурой $temp...")
+                
+                val result = sendMessage(
+                    userMessage = userMessage,
+                    messageHistory = messageHistory,
+                    responseMode = ResponseMode.TEMPERATURE_COMPARISON,
+                    temperature = temp
+                )
+                
+                when (result) {
+                    is ApiResult.Success -> {
+                        val response = result.data as? MessageResponse.StandardResponse
+                        if (response != null) {
+                            println("✅ Получен ответ для температуры $temp")
+                            results.add(
+                                TemperatureResult(
+                                    temperature = temp,
+                                    text = response.text,
+                                    shortQuery = shortQuery
+                                )
+                            )
+                        }
+                    }
+                    is ApiResult.Error -> {
+                        println("❌ Ошибка для температуры $temp: ${result.message}")
+                        // В случае ошибки добавляем результат с сообщением об ошибке
+                        results.add(
+                            TemperatureResult(
+                                temperature = temp,
+                                text = "Ошибка: ${result.message}",
+                                shortQuery = shortQuery
+                            )
+                        )
+                    }
+                }
+            }
+            
+            println("🌡️ Завершено! Получено ${results.size} результатов")
+            ApiResult.Success(MessageResponse.TemperatureComparisonResponse(results))
+        } catch (e: Exception) {
+            println("❌ Критическая ошибка при выполнении запросов: ${e.message}")
+            e.printStackTrace()
+            ApiResult.Error("❌ Ошибка при выполнении запросов: ${e.message}")
         }
     }
 }
