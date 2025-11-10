@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 data class ChatMessage(
@@ -22,7 +23,8 @@ data class ChatMessage(
     val isUser: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
     val responseMode: ResponseMode = ResponseMode.DEFAULT,
-    val rawResponse: String? = null
+    val rawResponse: String? = null,
+    val temperatureResults: List<TemperatureResult>? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,6 +35,7 @@ fun ChatScreenUI(
     currentMessage: String,
     isLoading: Boolean,
     responseMode: ResponseMode,
+    similarityAnalysis: String? = null,
     onResponseModeToggle: (ResponseMode) -> Unit,
     onMessageChange: (String) -> Unit,
     onSendMessage: () -> Unit,
@@ -41,6 +44,8 @@ fun ChatScreenUI(
     shouldScrollToBottom: Boolean = false,
     onScrolledToBottom: () -> Unit = {},
     onNavigateToDiscussion: () -> Unit = {},
+    onBackToStart: () -> Unit = {},
+    onTemperatureResultClick: (ChatMessage, Int) -> Unit = { _, _ -> },
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -64,69 +69,44 @@ fun ChatScreenUI(
         topBar = {
             TopAppBar(
                 title = { 
-                    // Переключатель режимов
+                    // Показываем текущий режим
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Кнопка DEFAULT
-                        Surface(
-                            onClick = { onResponseModeToggle(ResponseMode.DEFAULT) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (responseMode == ResponseMode.DEFAULT) 
-                                Color(0xFFFF7F50) else Color.White.copy(alpha = 0.3f),
-                            modifier = Modifier.weight(1f)
+                        Text(
+                            text = when (responseMode) {
+                                ResponseMode.DEFAULT -> "💬 Чат"
+                                ResponseMode.FIXED_RESPONSE_ENABLED -> "🔍 Поиск"
+                                ResponseMode.TASK -> "📋 Задачи"
+                                ResponseMode.TEMPERATURE_COMPARISON -> "🌡️ Температуры"
+                            },
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                },
+                navigationIcon = {
+                    // Кнопка возврата на стартовый экран
+                    IconButton(
+                        onClick = onBackToStart,
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "💬 Чат",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "←",
+                                style = MaterialTheme.typography.headlineMedium,
                                 color = Color.White,
-                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp),
-                                fontWeight = if (responseMode == ResponseMode.DEFAULT) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                        
-                        // Кнопка FIXED_RESPONSE_ENABLED
-                        Surface(
-                            onClick = { onResponseModeToggle(ResponseMode.FIXED_RESPONSE_ENABLED) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (responseMode == ResponseMode.FIXED_RESPONSE_ENABLED) 
-                                Color(0xFFFF7F50) else Color.White.copy(alpha = 0.3f),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                "🔍 Поиск",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp),
-                                fontWeight = if (responseMode == ResponseMode.FIXED_RESPONSE_ENABLED) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                        
-                        // Кнопка TASK
-                        Surface(
-                            onClick = { onResponseModeToggle(ResponseMode.TASK) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (responseMode == ResponseMode.TASK) 
-                                Color(0xFFFF7F50) else Color.White.copy(alpha = 0.3f),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                "📋 Задачи",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp),
-                                fontWeight = if (responseMode == ResponseMode.TASK) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 },
                 actions = {
-                    // Кнопка экспертной дискуссии
-                    IconButton(onClick = onNavigateToDiscussion) {
-                        Text("🎭", style = MaterialTheme.typography.titleLarge)
-                    }
                     // Кнопка очистки истории
                     IconButton(onClick = onClearHistory) {
                         Text("🗑️", style = MaterialTheme.typography.titleLarge)
@@ -168,8 +148,24 @@ fun ChatScreenUI(
                 items(messages) { message ->
                     MessageBubble(
                         message = message,
-                        onClick = { onMessageClick(message) }
+                        onClick = { onMessageClick(message) },
+                        onTemperatureResultClick = { index -> 
+                            onTemperatureResultClick(message, index)
+                        }
                     )
+                }
+                
+                // Элемент сравнения для последнего сообщения с температурным сравнением
+                if (!isLoading && messages.isNotEmpty() && similarityAnalysis != null) {
+                    val lastMessage = messages.last()
+                    if (!lastMessage.isUser && 
+                        lastMessage.responseMode == ResponseMode.TEMPERATURE_COMPARISON) {
+                        item {
+                            TemperatureComparisonCard(
+                                analysisText = similarityAnalysis
+                            )
+                        }
+                    }
                 }
                 
                 if (isLoading) {
@@ -253,9 +249,69 @@ fun ChatScreenUI(
 }
 
 @Composable
+fun TemperatureComparisonCard(
+    analysisText: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 8.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Заголовок
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "📊",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    text = "Анализ консистентности температур",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF6A0DAD)
+                )
+            }
+            
+            Divider(color = Color(0xFFE0E0E0))
+            
+            // Текст анализа от GPT
+            Text(
+                text = analysisText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF333333)
+            )
+            
+            Divider(color = Color(0xFFE0E0E0))
+            
+            // Пояснение
+            Text(
+                text = "Анализ показывает, насколько стабильны ответы внутри каждой температуры. " +
+                       "Высокий процент схожести = стабильные предсказуемые ответы. " +
+                       "Низкий процент = разнообразные креативные ответы.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF666666),
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+@Composable
 fun MessageBubble(
     message: ChatMessage,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onTemperatureResultClick: (Int) -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -312,8 +368,53 @@ fun MessageBubble(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 
-                // Если сообщение с включенным режимом поиска или задач, показываем кликабельную ссылку
-                if (!message.isUser && (message.responseMode == ResponseMode.FIXED_RESPONSE_ENABLED || message.responseMode == ResponseMode.TASK)) {
+                // Если сообщение с режимом сравнения температур, показываем три плашки
+                if (!message.isUser && message.responseMode == ResponseMode.TEMPERATURE_COMPARISON && message.temperatureResults != null) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        message.temperatureResults.forEachIndexed { index, result ->
+                            Surface(
+                                onClick = { onTemperatureResultClick(index) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFFFF7F50), // Коралловый
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "🌡️",
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = result.shortQuery,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = "Температура: ${result.temperature}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White.copy(alpha = 0.9f)
+                                        )
+                                    }
+                                    Text(
+                                        text = "▶",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (!message.isUser && (message.responseMode == ResponseMode.FIXED_RESPONSE_ENABLED || message.responseMode == ResponseMode.TASK)) {
                     Surface(
                         onClick = onClick,
                         shape = RoundedCornerShape(12.dp),
