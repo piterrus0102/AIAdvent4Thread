@@ -80,9 +80,11 @@ android {
         // Добавляем как BuildConfig поля (для использования в коде)
         val apiKey = properties.getProperty("yandex.api.key") ?: ""
         val folderId = properties.getProperty("yandex.folder.id") ?: ""
+        val hfToken = properties.getProperty("huggingface.token") ?: ""
         
         buildConfigField("String", "YANDEX_API_KEY", "\"$apiKey\"")
         buildConfigField("String", "YANDEX_FOLDER_ID", "\"$folderId\"")
+        buildConfigField("String", "HUGGINGFACE_TOKEN", "\"$hfToken\"")
     }
 
     buildTypes {
