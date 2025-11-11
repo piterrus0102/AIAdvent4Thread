@@ -37,14 +37,16 @@ private val LightGreenColorScheme = lightColorScheme(
 @Composable
 expect fun App(
     defaultApiKey: String = "",
-    defaultFolderId: String = ""
+    defaultFolderId: String = "",
+    defaultHuggingFaceToken: String = ""
 )
 
 @Composable
 fun AppContent(
     defaultApiKey: String = "",
     defaultFolderId: String = "",
-    chatScreenContent: @Composable (apiKey: String, catalogId: String) -> Unit
+    defaultHuggingFaceToken: String = "",
+    chatScreenContent: @Composable (apiKey: String, catalogId: String, hfToken: String) -> Unit
 ) {
     MaterialTheme(
         colorScheme = LightGreenColorScheme
@@ -55,7 +57,8 @@ fun AppContent(
         ) {
             chatScreenContent(
                 defaultApiKey,
-                defaultFolderId
+                defaultFolderId,
+                defaultHuggingFaceToken
             )
         }
     }
