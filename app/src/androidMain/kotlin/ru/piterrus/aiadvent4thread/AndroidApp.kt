@@ -10,17 +10,20 @@ import ru.piterrus.aiadvent4thread.database.ChatRepository
 @Composable
 actual fun App(
     defaultApiKey: String,
-    defaultFolderId: String
+    defaultFolderId: String,
+    defaultHuggingFaceToken: String
 ) {
     val context = LocalContext.current
     AppContent(
         defaultApiKey = defaultApiKey,
-        defaultFolderId = defaultFolderId
-    ) { apiKey, catalogId ->
+        defaultFolderId = defaultFolderId,
+        defaultHuggingFaceToken = defaultHuggingFaceToken
+    ) { apiKey, catalogId, hfToken ->
         ChatScreenWithDatabase(
             context = context,
             apiKey = apiKey,
-            catalogId = catalogId
+            catalogId = catalogId,
+            huggingFaceToken = hfToken
         )
     }
 }
@@ -29,7 +32,8 @@ actual fun App(
 fun ChatScreenWithDatabase(
     context: Context,
     apiKey: String,
-    catalogId: String
+    catalogId: String,
+    huggingFaceToken: String
 ) {
     // Создаем базу данных и repository
     val database = remember { ChatDatabase.getDatabase(context) }
@@ -68,6 +72,7 @@ fun ChatScreenWithDatabase(
     
     val coroutineScope = rememberCoroutineScope()
     val gptClient = remember { YandexGPTClient(apiKey, catalogId) }
+    val hfClient = remember { HuggingFaceClient(huggingFaceToken) }
     
     // Синхронизируем состояние с БД
     LaunchedEffect(messagesFromDb) {
@@ -86,6 +91,9 @@ fun ChatScreenWithDatabase(
                 },
                 onDiscussionSelected = {
                     currentScreen = Screen.Discussion
+                },
+                onHuggingFaceSelected = {
+                    currentScreen = Screen.HuggingFace
                 }
             )
         }
@@ -405,6 +413,15 @@ fun ChatScreenWithDatabase(
                 }
             )
         }
+        
+        is Screen.HuggingFace -> {
+            HuggingFaceScreen(
+                hfClient = hfClient,
+                onBackClick = {
+                    currentScreen = Screen.Start
+                }
+            )
+        }
     }
 }
 
@@ -416,5 +433,6 @@ sealed class Screen {
     object Discussion : Screen()
     data class ExpertDetail(val expert: ExpertRole, val expertNumber: Int) : Screen()
     data class TemperatureDetail(val temperatureResult: TemperatureResult) : Screen()
+    object HuggingFace : Screen()
 }
 

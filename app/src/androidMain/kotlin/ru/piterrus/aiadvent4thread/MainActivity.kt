@@ -13,7 +13,8 @@ class MainActivity : ComponentActivity() {
             // Передаем значения из BuildConfig как default values
             App(
                 defaultApiKey = BuildConfig.YANDEX_API_KEY,
-                defaultFolderId = BuildConfig.YANDEX_FOLDER_ID
+                defaultFolderId = BuildConfig.YANDEX_FOLDER_ID,
+                defaultHuggingFaceToken = BuildConfig.HUGGINGFACE_TOKEN
             )
         }
     }

@@ -8,8 +8,10 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.json.JSONObject
 
 @Serializable
 data class YandexGPTRequest(
@@ -107,6 +109,7 @@ class YandexGPTClient(
         }
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     suspend fun sendMessage(
         userMessage: String,
         messageHistory: List<Message> = emptyList(),
@@ -298,4 +301,3 @@ class YandexGPTClient(
         }
     }
 }
-

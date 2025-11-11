@@ -2,7 +2,9 @@ package ru.piterrus.aiadvent4thread
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,7 +19,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun StartScreen(
     onModeSelected: (ResponseMode) -> Unit,
-    onDiscussionSelected: () -> Unit
+    onDiscussionSelected: () -> Unit,
+    onHuggingFaceSelected: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -35,10 +38,12 @@ fun StartScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
+            Spacer(modifier = Modifier.height(40.dp))
             // Заголовок
             Text(
                 text = "Выберите режим",
@@ -96,6 +101,18 @@ fun StartScreen(
                 description = "Три ответа с разными температурами LLM (0, 0.5, 1)",
                 onClick = { onModeSelected(ResponseMode.TEMPERATURE_COMPARISON) }
             )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+        // Карточка "HuggingFace Models"
+        ModeCard(
+            icon = "🤗",
+            title = "HuggingFace Models",
+            description = "3 модели: L3-8B-Stheno, MiniMax-M2, Qwen2.5-7B",
+            onClick = onHuggingFaceSelected
+        )
+            
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
