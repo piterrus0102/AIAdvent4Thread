@@ -2,6 +2,7 @@ package ru.piterrus.aiadvent4thread
 
 import android.content.Context
 import android.content.SharedPreferences
+import ru.piterrus.aiadvent4thread.data.model.ResponseMode
 
 class PreferencesManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(

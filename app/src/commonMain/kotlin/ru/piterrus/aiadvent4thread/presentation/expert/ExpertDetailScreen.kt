@@ -1,4 +1,4 @@
-package ru.piterrus.aiadvent4thread
+package ru.piterrus.aiadvent4thread.presentation.expert
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -18,11 +18,10 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpertDetailScreen(
-    expert: ExpertRole,
-    expertNumber: Int,
-    onBackClick: () -> Unit
+    state: ExpertDetailScreenState,
+    onIntent: (ExpertDetailScreenIntent) -> Unit
 ) {
-    val cardColor = when (expertNumber) {
+    val cardColor = when (state.expertNumber) {
         1 -> Color(0xFF4CAF50) // Зеленый
         2 -> Color(0xFF2196F3) // Синий
         3 -> Color(0xFFFFC107) // Желтый
@@ -32,9 +31,9 @@ fun ExpertDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Эксперт #$expertNumber") },
+                title = { Text("Эксперт #${state.expertNumber}") },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(onClick = { onIntent(ExpertDetailScreenIntent.BackClicked) }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Назад"
@@ -84,7 +83,7 @@ fun ExpertDetailScreen(
                         color = cardColor
                     ) {
                         Text(
-                            text = "Эксперт #$expertNumber",
+                            text = "Эксперт #${state.expertNumber}",
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
@@ -94,7 +93,7 @@ fun ExpertDetailScreen(
                     
                     // Название роли
                     Text(
-                        text = expert.name,
+                        text = state.expert.name,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = cardColor
@@ -102,7 +101,7 @@ fun ExpertDetailScreen(
                     
                     // Описание роли
                     Text(
-                        text = expert.description,
+                        text = state.expert.description,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.Gray,
                         fontWeight = FontWeight.Medium
@@ -119,7 +118,7 @@ fun ExpertDetailScreen(
                     )
                     
                     Text(
-                        text = expert.answer,
+                        text = state.expert.answer,
                         style = MaterialTheme.typography.bodyLarge,
                         color = Color(0xFF333333),
                         lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.5f

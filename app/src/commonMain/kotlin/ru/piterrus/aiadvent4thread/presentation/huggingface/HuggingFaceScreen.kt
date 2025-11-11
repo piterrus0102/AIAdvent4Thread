@@ -1,4 +1,4 @@
-package ru.piterrus.aiadvent4thread
+package ru.piterrus.aiadvent4thread.presentation.huggingface
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,37 +17,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-
-data class HFChatMessage(
-    val text: String,
-    val isUser: Boolean,
-    val model: HFModel,
-    val timeTaken: Long? = null,
-    val tokensUsed: Int? = null,
-    val thinkingContent: String? = null,  // Для Qwen3
-    val timestamp: Long = System.currentTimeMillis()
-)
+import ru.piterrus.aiadvent4thread.data.model.HFChatMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HuggingFaceScreen(
-    hfClient: HuggingFaceClient,
-    onBackClick: () -> Unit
+    state: HuggingFaceScreenState,
+    onIntent: (HuggingFaceScreenIntent) -> Unit
 ) {
-    var selectedTabIndex by remember { mutableStateOf(0) }
-    var sthenoMessages by remember { mutableStateOf(listOf<HFChatMessage>()) }
-    var miniMaxMessages by remember { mutableStateOf(listOf<HFChatMessage>()) }
-    var qwen2Messages by remember { mutableStateOf(listOf<HFChatMessage>()) }
-    var sthenoInput by remember { mutableStateOf("") }
-    var miniMaxInput by remember { mutableStateOf("") }
-    var qwen2Input by remember { mutableStateOf("") }
-    var isSthenoLoading by remember { mutableStateOf(false) }
-    var isMiniMaxLoading by remember { mutableStateOf(false) }
-    var isQwen2Loading by remember { mutableStateOf(false) }
-    var qwen2ThinkingMode by remember { mutableStateOf(true) }  // Переключатель thinking mode
-    
-    val coroutineScope = rememberCoroutineScope()
-    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -60,7 +37,7 @@ fun HuggingFaceScreen(
                 },
                 navigationIcon = {
                     IconButton(
-                        onClick = onBackClick,
+                        onClick = { onIntent(HuggingFaceScreenIntent.BackClicked) },
                         modifier = Modifier.padding(start = 8.dp)
                     ) {
                         Box(
@@ -99,45 +76,45 @@ fun HuggingFaceScreen(
         ) {
             // Tabs
             TabRow(
-                selectedTabIndex = selectedTabIndex,
+                selectedTabIndex = state.selectedTabIndex,
                 containerColor = Color(0xFF6A0DAD),
                 contentColor = Color.White,
                 indicator = { tabPositions ->
                     TabRowDefaults.Indicator(
-                        Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                        Modifier.tabIndicatorOffset(tabPositions[state.selectedTabIndex]),
                         color = Color(0xFFFF7F50)
                     )
                 }
             ) {
                 Tab(
-                    selected = selectedTabIndex == 0,
-                    onClick = { selectedTabIndex = 0 },
+                    selected = state.selectedTabIndex == 0,
+                    onClick = { onIntent(HuggingFaceScreenIntent.TabSelected(0)) },
                     text = {
                         Text(
                             "L3-8B-Stheno",
-                            fontWeight = if (selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal,
+                            fontWeight = if (state.selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal,
                             fontSize = 11.sp
                         )
                     }
                 )
                 Tab(
-                    selected = selectedTabIndex == 1,
-                    onClick = { selectedTabIndex = 1 },
+                    selected = state.selectedTabIndex == 1,
+                    onClick = { onIntent(HuggingFaceScreenIntent.TabSelected(1)) },
                     text = {
                         Text(
                             "MiniMax-M2",
-                            fontWeight = if (selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal,
+                            fontWeight = if (state.selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal,
                             fontSize = 11.sp
                         )
                     }
                 )
                 Tab(
-                    selected = selectedTabIndex == 2,
-                    onClick = { selectedTabIndex = 2 },
+                    selected = state.selectedTabIndex == 2,
+                    onClick = { onIntent(HuggingFaceScreenIntent.TabSelected(2)) },
                     text = {
                         Text(
                             "Qwen2.5-7B",
-                            fontWeight = if (selectedTabIndex == 2) FontWeight.Bold else FontWeight.Normal,
+                            fontWeight = if (state.selectedTabIndex == 2) FontWeight.Bold else FontWeight.Normal,
                             fontSize = 11.sp
                         )
                     }
@@ -145,115 +122,31 @@ fun HuggingFaceScreen(
             }
             
             // Content for selected tab
-            when (selectedTabIndex) {
+            when (state.selectedTabIndex) {
                 0 -> {
                     // Stheno Chat
                     HFModelChat(
-                        messages = sthenoMessages,
-                        currentInput = sthenoInput,
-                        isLoading = isSthenoLoading,
+                        messages = state.sthenoMessages,
+                        currentInput = state.sthenoInput,
+                        isLoading = state.isSthenoLoading,
                         modelName = "L3-8B-Stheno-v3.2",
                         modelDescription = "Продвинутая модель на базе Llama 3 (8B параметров)",
-                        onInputChange = { sthenoInput = it },
-                        onSendMessage = {
-                            if (sthenoInput.isNotBlank()) {
-                                val userPrompt = sthenoInput
-                                sthenoInput = ""
-                                
-                                // Добавляем сообщение пользователя
-                                sthenoMessages = sthenoMessages + HFChatMessage(
-                                    text = userPrompt,
-                                    isUser = true,
-                                    model = HFModel.STHENO
-                                )
-                                
-                                isSthenoLoading = true
-                                coroutineScope.launch {
-                                    try {
-                                        val result = hfClient.callStheno(userPrompt)
-                                        
-                                        when (result) {
-                                            is HuggingFaceResult.Success -> {
-                                                sthenoMessages = sthenoMessages + HFChatMessage(
-                                                    text = result.text,
-                                                    isUser = false,
-                                                    model = HFModel.STHENO,
-                                                    timeTaken = result.timeTaken,
-                                                    tokensUsed = result.tokensUsed
-                                                )
-                                            }
-                                            is HuggingFaceResult.Error -> {
-                                                sthenoMessages = sthenoMessages + HFChatMessage(
-                                                    text = result.message,
-                                                    isUser = false,
-                                                    model = HFModel.STHENO
-                                                )
-                                            }
-                                        }
-                                    } finally {
-                                        isSthenoLoading = false
-                                    }
-                                }
-                            }
-                        },
-                        onClearHistory = {
-                            sthenoMessages = emptyList()
-                        }
+                        onInputChange = { onIntent(HuggingFaceScreenIntent.SthenoInputChanged(it)) },
+                        onSendMessage = { onIntent(HuggingFaceScreenIntent.SendSthenoMessage) },
+                        onClearHistory = { onIntent(HuggingFaceScreenIntent.ClearSthenoHistory) }
                     )
                 }
                 1 -> {
                     // MiniMax Chat
                     HFModelChat(
-                        messages = miniMaxMessages,
-                        currentInput = miniMaxInput,
-                        isLoading = isMiniMaxLoading,
+                        messages = state.miniMaxMessages,
+                        currentInput = state.miniMaxInput,
+                        isLoading = state.isMiniMaxLoading,
                         modelName = "MiniMax-M2 (Novita)",
                         modelDescription = "Мультимодальная модель от MiniMaxAI через Novita AI",
-                        onInputChange = { miniMaxInput = it },
-                        onSendMessage = {
-                            if (miniMaxInput.isNotBlank()) {
-                                val userPrompt = miniMaxInput
-                                miniMaxInput = ""
-                                
-                                // Добавляем сообщение пользователя
-                                miniMaxMessages = miniMaxMessages + HFChatMessage(
-                                    text = userPrompt,
-                                    isUser = true,
-                                    model = HFModel.MINIMAX
-                                )
-                                
-                                isMiniMaxLoading = true
-                                coroutineScope.launch {
-                                    try {
-                                        val result = hfClient.callMiniMax(userPrompt)
-                                        
-                                        when (result) {
-                                            is HuggingFaceResult.Success -> {
-                                                miniMaxMessages = miniMaxMessages + HFChatMessage(
-                                                    text = result.text,
-                                                    isUser = false,
-                                                    model = HFModel.MINIMAX,
-                                                    timeTaken = result.timeTaken,
-                                                    tokensUsed = result.tokensUsed
-                                                )
-                                            }
-                                            is HuggingFaceResult.Error -> {
-                                                miniMaxMessages = miniMaxMessages + HFChatMessage(
-                                                    text = result.message,
-                                                    isUser = false,
-                                                    model = HFModel.MINIMAX
-                                                )
-                                            }
-                                        }
-                                    } finally {
-                                        isMiniMaxLoading = false
-                                    }
-                                }
-                            }
-                        },
-                        onClearHistory = {
-                            miniMaxMessages = emptyList()
-                        }
+                        onInputChange = { onIntent(HuggingFaceScreenIntent.MiniMaxInputChanged(it)) },
+                        onSendMessage = { onIntent(HuggingFaceScreenIntent.SendMiniMaxMessage) },
+                        onClearHistory = { onIntent(HuggingFaceScreenIntent.ClearMiniMaxHistory) }
                     )
                 }
                 2 -> {
@@ -273,69 +166,29 @@ fun HuggingFaceScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (qwen2ThinkingMode) "🧠 Thinking Mode" else "⚡ Fast Mode",
+                                    text = if (state.qwen2ThinkingMode) "🧠 Thinking Mode" else "⚡ Fast Mode",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF6A0DAD)
                                 )
                                 Switch(
-                                    checked = qwen2ThinkingMode,
-                                    onCheckedChange = { qwen2ThinkingMode = it }
+                                    checked = state.qwen2ThinkingMode,
+                                    onCheckedChange = { 
+                                        onIntent(HuggingFaceScreenIntent.Qwen2ThinkingModeChanged(it))
+                                    }
                                 )
                             }
                         }
                         
                         HFModelChat(
-                            messages = qwen2Messages,
-                            currentInput = qwen2Input,
-                            isLoading = isQwen2Loading,
-                            modelName = "Qwen2.5-7B" + if (qwen2ThinkingMode) " (Thinking)" else " (Fast)",
+                            messages = state.qwen2Messages,
+                            currentInput = state.qwen2Input,
+                            isLoading = state.isQwen2Loading,
+                            modelName = "Qwen2.5-7B" + if (state.qwen2ThinkingMode) " (Thinking)" else " (Fast)",
                             modelDescription = "Модель от Alibaba (7B параметров). Thinking mode: рассуждения + ответ",
-                            onInputChange = { qwen2Input = it },
-                            onSendMessage = {
-                                if (qwen2Input.isNotBlank()) {
-                                    val userPrompt = qwen2Input
-                                    qwen2Input = ""
-                                    
-                                    qwen2Messages = qwen2Messages + HFChatMessage(
-                                        text = userPrompt,
-                                        isUser = true,
-                                        model = HFModel.QWEN2
-                                    )
-                                    
-                                    isQwen2Loading = true
-                                    coroutineScope.launch {
-                                        try {
-                                            val result = hfClient.callQwen2(userPrompt, qwen2ThinkingMode)
-                                            
-                                            when (result) {
-                                                is HuggingFaceResult.Success -> {
-                                                    qwen2Messages = qwen2Messages + HFChatMessage(
-                                                        text = result.text,
-                                                        isUser = false,
-                                                        model = HFModel.QWEN2,
-                                                        timeTaken = result.timeTaken,
-                                                        tokensUsed = result.tokensUsed,
-                                                        thinkingContent = result.thinkingContent
-                                                    )
-                                                }
-                                                is HuggingFaceResult.Error -> {
-                                                    qwen2Messages = qwen2Messages + HFChatMessage(
-                                                        text = result.message,
-                                                        isUser = false,
-                                                        model = HFModel.QWEN2
-                                                    )
-                                                }
-                                            }
-                                        } finally {
-                                            isQwen2Loading = false
-                                        }
-                                    }
-                                }
-                            },
-                            onClearHistory = {
-                                qwen2Messages = emptyList()
-                            }
+                            onInputChange = { onIntent(HuggingFaceScreenIntent.Qwen2InputChanged(it)) },
+                            onSendMessage = { onIntent(HuggingFaceScreenIntent.SendQwen2Message) },
+                            onClearHistory = { onIntent(HuggingFaceScreenIntent.ClearQwen2History) }
                         )
                     }
                 }
@@ -345,7 +198,7 @@ fun HuggingFaceScreen(
 }
 
 @Composable
-fun HFModelChat(
+private fun HFModelChat(
     messages: List<HFChatMessage>,
     currentInput: String,
     isLoading: Boolean,
@@ -497,7 +350,7 @@ fun HFModelChat(
 }
 
 @Composable
-fun HFMessageBubble(message: HFChatMessage) {
+private fun HFMessageBubble(message: HFChatMessage) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
@@ -554,7 +407,7 @@ fun HFMessageBubble(message: HFChatMessage) {
                 
                 Spacer(modifier = Modifier.height(6.dp))
                 
-                // Показываем thinking content для Qwen3, если есть
+                // Показываем thinking content для Qwen, если есть
                 if (!message.isUser && message.thinkingContent != null && message.thinkingContent.isNotBlank()) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),

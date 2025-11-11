@@ -1,4 +1,4 @@
-package ru.piterrus.aiadvent4thread
+package ru.piterrus.aiadvent4thread.presentation.temperature
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -19,17 +19,17 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TemperatureDetailScreen(
-    temperatureResult: TemperatureResult,
-    onBackClick: () -> Unit
+    state: TemperatureDetailScreenState,
+    onIntent: (TemperatureDetailScreenIntent) -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
-                    Text("🌡️ Температура: ${temperatureResult.temperature}")
+                    Text("🌡️ Температура: ${state.temperatureResult.temperature}")
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(onClick = { onIntent(TemperatureDetailScreenIntent.BackClicked) }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Назад"
@@ -80,7 +80,7 @@ fun TemperatureDetailScreen(
                         color = Color(0xFF6A0DAD)
                     )
                     Text(
-                        text = temperatureResult.shortQuery,
+                        text = state.temperatureResult.shortQuery,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color(0xFF333333)
                     )
@@ -108,14 +108,14 @@ fun TemperatureDetailScreen(
                             style = MaterialTheme.typography.titleLarge
                         )
                         Text(
-                            text = "Температура: ${temperatureResult.temperature}",
+                            text = "Температура: ${state.temperatureResult.temperature}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF6A0DAD)
                         )
                     }
                     Text(
-                        text = when (temperatureResult.temperature) {
+                        text = when (state.temperatureResult.temperature) {
                             0.0 -> "Низкая температура - более детерминированный и предсказуемый ответ"
                             0.5 -> "Средняя температура - баланс между креативностью и предсказуемостью"
                             1.0 -> "Высокая температура - более креативный и разнообразный ответ"
@@ -146,7 +146,7 @@ fun TemperatureDetailScreen(
                         color = Color(0xFF6A0DAD)
                     )
                     Text(
-                        text = temperatureResult.text,
+                        text = state.temperatureResult.text,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color(0xFF333333)
                     )

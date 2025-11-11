@@ -1,4 +1,4 @@
-package ru.piterrus.aiadvent4thread
+package ru.piterrus.aiadvent4thread.presentation.start
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -15,12 +15,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.piterrus.aiadvent4thread.data.model.ResponseMode
 
 @Composable
 fun StartScreen(
-    onModeSelected: (ResponseMode) -> Unit,
-    onDiscussionSelected: () -> Unit,
-    onHuggingFaceSelected: () -> Unit = {}
+    state: StartScreenState,
+    onIntent: (StartScreenIntent) -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -59,7 +59,7 @@ fun StartScreen(
                 icon = "💬",
                 title = "Чат",
                 description = "Обычный режим общения с YandexGPT",
-                onClick = { onModeSelected(ResponseMode.DEFAULT) }
+                onClick = { onIntent(StartScreenIntent.ModeSelected(ResponseMode.DEFAULT)) }
             )
             
             Spacer(modifier = Modifier.height(24.dp))
@@ -69,7 +69,7 @@ fun StartScreen(
                 icon = "🔍",
                 title = "Поиск",
                 description = "Поиск информации с детальными результатами",
-                onClick = { onModeSelected(ResponseMode.FIXED_RESPONSE_ENABLED) }
+                onClick = { onIntent(StartScreenIntent.ModeSelected(ResponseMode.FIXED_RESPONSE_ENABLED)) }
             )
             
             Spacer(modifier = Modifier.height(24.dp))
@@ -79,7 +79,7 @@ fun StartScreen(
                 icon = "📋",
                 title = "Задачи",
                 description = "Создание и управление задачами",
-                onClick = { onModeSelected(ResponseMode.TASK) }
+                onClick = { onIntent(StartScreenIntent.ModeSelected(ResponseMode.TASK)) }
             )
             
             Spacer(modifier = Modifier.height(24.dp))
@@ -89,7 +89,7 @@ fun StartScreen(
                 icon = "🎭",
                 title = "Экспертная дискуссия",
                 description = "Обсуждение темы с виртуальными экспертами",
-                onClick = onDiscussionSelected
+                onClick = { onIntent(StartScreenIntent.DiscussionSelected) }
             )
             
             Spacer(modifier = Modifier.height(24.dp))
@@ -99,18 +99,18 @@ fun StartScreen(
                 icon = "🌡️",
                 title = "Сравнение температур",
                 description = "Три ответа с разными температурами LLM (0, 0.5, 1)",
-                onClick = { onModeSelected(ResponseMode.TEMPERATURE_COMPARISON) }
+                onClick = { onIntent(StartScreenIntent.ModeSelected(ResponseMode.TEMPERATURE_COMPARISON)) }
             )
             
             Spacer(modifier = Modifier.height(24.dp))
             
-        // Карточка "HuggingFace Models"
-        ModeCard(
-            icon = "🤗",
-            title = "HuggingFace Models",
-            description = "3 модели: L3-8B-Stheno, MiniMax-M2, Qwen2.5-7B",
-            onClick = onHuggingFaceSelected
-        )
+            // Карточка "HuggingFace Models"
+            ModeCard(
+                icon = "🤗",
+                title = "HuggingFace Models",
+                description = "3 модели: L3-8B-Stheno, MiniMax-M2, Qwen2.5-7B",
+                onClick = { onIntent(StartScreenIntent.HuggingFaceSelected) }
+            )
             
             Spacer(modifier = Modifier.height(40.dp))
         }
@@ -118,7 +118,7 @@ fun StartScreen(
 }
 
 @Composable
-fun ModeCard(
+private fun ModeCard(
     icon: String,
     title: String,
     description: String,

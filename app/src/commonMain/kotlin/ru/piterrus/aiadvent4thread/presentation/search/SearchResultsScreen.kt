@@ -1,4 +1,4 @@
-package ru.piterrus.aiadvent4thread
+package ru.piterrus.aiadvent4thread.presentation.search
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -15,16 +15,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import ru.piterrus.aiadvent4thread.data.model.YandexGPTFixedResponse
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchResultsScreen(
-    results: List<YandexGPTFixedResponse>,
-    rawResponse: String?,
-    onBackClick: () -> Unit,
+    state: SearchResultsScreenState,
+    onIntent: (SearchResultsScreenIntent) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showRawResponse by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -34,8 +33,10 @@ fun SearchResultsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Switch(
-                            checked = showRawResponse,
-                            onCheckedChange = { showRawResponse = it },
+                            checked = state.showRawResponse,
+                            onCheckedChange = { 
+                                onIntent(SearchResultsScreenIntent.ShowRawResponseToggled(it))
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
                                 checkedTrackColor = Color(0xFFFF7F50), // Коралловый
@@ -51,7 +52,7 @@ fun SearchResultsScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(onClick = { onIntent(SearchResultsScreenIntent.BackClicked) }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Назад",
@@ -81,9 +82,9 @@ fun SearchResultsScreen(
                 )
                 .padding(paddingValues)
         ) {
-            if (showRawResponse) {
+            if (state.showRawResponse) {
                 // Показываем сырой JSON
-                if (rawResponse != null) {
+                if (state.rawResponse != null) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp)
@@ -112,7 +113,7 @@ fun SearchResultsScreen(
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Text(
-                                        text = rawResponse,
+                                        text = state.rawResponse,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Color(0xFF00FF00), // Зеленый как в терминале
                                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
@@ -135,7 +136,7 @@ fun SearchResultsScreen(
                 }
             } else {
                 // Обычный режим отображения результатов
-                if (results.isEmpty()) {
+                if (state.results.isEmpty()) {
                     // Показываем сообщение если результатов нет
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -164,7 +165,7 @@ fun SearchResultsScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(results) { result ->
+                        items(state.results) { result ->
                             SearchResultCard(result)
                         }
                     }
@@ -175,7 +176,7 @@ fun SearchResultsScreen(
 }
 
 @Composable
-fun SearchResultCard(result: YandexGPTFixedResponse) {
+private fun SearchResultCard(result: YandexGPTFixedResponse) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),

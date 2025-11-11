@@ -27,6 +27,10 @@ kotlin {
             // Room Database
             implementation(libs.room.runtime)
             implementation(libs.room.ktx)
+            
+            // Koin
+            implementation(libs.koin.android)
+            implementation(libs.koin.androidx.compose)
         }
         
         commonMain.dependencies {
@@ -45,6 +49,9 @@ kotlin {
             
             // Kotlinx Serialization
             implementation(libs.kotlinx.serialization.json)
+            
+            // Koin Core
+            implementation(libs.koin.core)
         }
         
         commonTest.dependencies {

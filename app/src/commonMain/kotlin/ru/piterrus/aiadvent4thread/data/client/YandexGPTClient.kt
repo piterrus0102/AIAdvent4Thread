@@ -1,4 +1,4 @@
-package ru.piterrus.aiadvent4thread
+package ru.piterrus.aiadvent4thread.data.client
 
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -8,85 +8,8 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
-
-@Serializable
-data class YandexGPTRequest(
-    val modelUri: String,
-    val completionOptions: CompletionOptions,
-    val messages: List<Message>
-)
-
-@Serializable
-data class CompletionOptions(
-    val stream: Boolean = false,
-    val temperature: Double = 0.6,
-    val maxTokens: Int = 2000
-)
-
-@Serializable
-data class Message(
-    val role: String,
-    val text: String
-)
-
-@Serializable
-data class YandexGPTResponse(
-    val result: Result
-)
-
-@Serializable
-data class YandexGPTFixedResponse(
-    val title: String,
-    val message: String,
-)
-
-// Результат работы sendMessage
-sealed class ApiResult<out T> {
-    data class Success<T>(val data: T) : ApiResult<T>()
-    data class Error(val message: String) : ApiResult<Nothing>()
-}
-
-// Типы ответов от сервера
-sealed class MessageResponse {
-    data class StandardResponse(val text: String) : MessageResponse()
-    data class FixedResponse(
-        val results: List<YandexGPTFixedResponse>,
-        val rawText: String
-    ) : MessageResponse()
-    data class TemperatureComparisonResponse(
-        val results: List<TemperatureResult>
-    ) : MessageResponse()
-}
-
-data class TemperatureResult(
-    val temperature: Double,
-    val text: String,
-    val shortQuery: String
-)
-
-@Serializable
-data class Result(
-    val alternatives: List<Alternative>,
-    val usage: Usage,
-    val modelVersion: String
-)
-
-@Serializable
-data class Alternative(
-    val message: Message,
-    val status: String
-)
-
-@Serializable
-data class Usage(
-    val inputTextTokens: Int,
-    val completionTokens: Int,
-    val totalTokens: Int
-)
+import ru.piterrus.aiadvent4thread.data.model.*
 
 class YandexGPTClient(
     private val apiKey: String,
@@ -109,7 +32,6 @@ class YandexGPTClient(
         }
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
     suspend fun sendMessage(
         userMessage: String,
         messageHistory: List<Message> = emptyList(),
@@ -148,11 +70,7 @@ class YandexGPTClient(
                             add(
                                 Message(
                                     role = "system",
-                                    text = "Ты — универсальный AI-ассистент. \n" +
-                                            "Ответь на запрос пользователя ясно и полно, в свободной форме, без ограничения стиля. \n" +
-                                            "Используй свои собственные ассоциации, знания и стиль изложения. \n" +
-                                            "Не упоминай, что ты AI. Просто дай естественный, цельный ответ на вопрос.\n" +
-                                            "Ответ не должен содержать более 400 символов"
+                                    text = Prompts.temperatureComparisonPrompt
                                 )
                             )
                         }
@@ -301,3 +219,4 @@ class YandexGPTClient(
         }
     }
 }
+

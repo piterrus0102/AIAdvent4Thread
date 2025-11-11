@@ -1,4 +1,4 @@
-package ru.piterrus.aiadvent4thread
+package ru.piterrus.aiadvent4thread.data.model
 
 /**
  * Модель эксперта для дискуссии

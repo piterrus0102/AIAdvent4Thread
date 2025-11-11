@@ -1,4 +1,4 @@
-package ru.piterrus.aiadvent4thread
+package ru.piterrus.aiadvent4thread.presentation.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,52 +16,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-
-data class ChatMessage(
-    val id: Long = 0,
-    val text: String,
-    val isUser: Boolean,
-    val timestamp: Long = System.currentTimeMillis(),
-    val responseMode: ResponseMode = ResponseMode.DEFAULT,
-    val rawResponse: String? = null,
-    val temperatureResults: List<TemperatureResult>? = null
-)
+import ru.piterrus.aiadvent4thread.data.model.ChatMessage
+import ru.piterrus.aiadvent4thread.data.model.ResponseMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreenUI(
-    modifier: Modifier = Modifier,
-    messages: List<ChatMessage>,
-    currentMessage: String,
-    isLoading: Boolean,
-    responseMode: ResponseMode,
-    similarityAnalysis: String? = null,
-    onResponseModeToggle: (ResponseMode) -> Unit,
-    onMessageChange: (String) -> Unit,
-    onSendMessage: () -> Unit,
-    onClearHistory: () -> Unit = {},
-    onMessageClick: (ChatMessage) -> Unit = {},
-    shouldScrollToBottom: Boolean = false,
-    onScrolledToBottom: () -> Unit = {},
-    onNavigateToDiscussion: () -> Unit = {},
-    onBackToStart: () -> Unit = {},
-    onTemperatureResultClick: (ChatMessage, Int) -> Unit = { _, _ -> },
+fun ChatScreen(
+    state: ChatScreenState,
+    onIntent: (ChatScreenIntent) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     
     // Автоскролл вниз при изменении количества сообщений
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(state.messages.size) {
+        if (state.messages.isNotEmpty()) {
+            listState.animateScrollToItem(state.messages.size - 1)
         }
     }
     
     // Дополнительный автоскролл вниз при необходимости (например, при возврате)
-    LaunchedEffect(shouldScrollToBottom) {
-        if (shouldScrollToBottom && messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
-            onScrolledToBottom()
+    LaunchedEffect(state.shouldScrollToBottom) {
+        if (state.shouldScrollToBottom && state.messages.isNotEmpty()) {
+            listState.animateScrollToItem(state.messages.size - 1)
+            onIntent(ChatScreenIntent.ScrolledToBottom)
         }
     }
 
@@ -75,7 +54,7 @@ fun ChatScreenUI(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = when (responseMode) {
+                            text = when (state.responseMode) {
                                 ResponseMode.DEFAULT -> "💬 Чат"
                                 ResponseMode.FIXED_RESPONSE_ENABLED -> "🔍 Поиск"
                                 ResponseMode.TASK -> "📋 Задачи"
@@ -90,7 +69,7 @@ fun ChatScreenUI(
                 navigationIcon = {
                     // Кнопка возврата на стартовый экран
                     IconButton(
-                        onClick = onBackToStart,
+                        onClick = { onIntent(ChatScreenIntent.BackToStart) },
                         modifier = Modifier.padding(start = 8.dp)
                     ) {
                         Box(
@@ -108,7 +87,7 @@ fun ChatScreenUI(
                 },
                 actions = {
                     // Кнопка очистки истории
-                    IconButton(onClick = onClearHistory) {
+                    IconButton(onClick = { onIntent(ChatScreenIntent.ClearHistory) }) {
                         Text("🗑️", style = MaterialTheme.typography.titleLarge)
                     }
                 },
@@ -145,30 +124,30 @@ fun ChatScreenUI(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 
-                items(messages) { message ->
+                items(state.messages) { message ->
                     MessageBubble(
                         message = message,
-                        onClick = { onMessageClick(message) },
+                        onClick = { onIntent(ChatScreenIntent.MessageClicked(message)) },
                         onTemperatureResultClick = { index -> 
-                            onTemperatureResultClick(message, index)
+                            onIntent(ChatScreenIntent.TemperatureResultClicked(message, index))
                         }
                     )
                 }
                 
                 // Элемент сравнения для последнего сообщения с температурным сравнением
-                if (!isLoading && messages.isNotEmpty() && similarityAnalysis != null) {
-                    val lastMessage = messages.last()
+                if (!state.isLoading && state.messages.isNotEmpty() && state.similarityAnalysis != null) {
+                    val lastMessage = state.messages.last()
                     if (!lastMessage.isUser && 
                         lastMessage.responseMode == ResponseMode.TEMPERATURE_COMPARISON) {
                         item {
                             TemperatureComparisonCard(
-                                analysisText = similarityAnalysis
+                                analysisText = state.similarityAnalysis
                             )
                         }
                     }
                 }
                 
-                if (isLoading) {
+                if (state.isLoading) {
                     item {
                         Box(
                             modifier = Modifier.fillMaxWidth(),
@@ -205,11 +184,11 @@ fun ChatScreenUI(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedTextField(
-                        value = currentMessage,
-                        onValueChange = onMessageChange,
+                        value = state.currentMessage,
+                        onValueChange = { onIntent(ChatScreenIntent.MessageChanged(it)) },
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Введите сообщение...") },
-                        enabled = !isLoading,
+                        enabled = !state.isLoading,
                         maxLines = 4,
                         shape = RoundedCornerShape(20.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -220,15 +199,15 @@ fun ChatScreenUI(
 
                     Button(
                         onClick = {
-                            onSendMessage()
+                            onIntent(ChatScreenIntent.SendMessage)
                             coroutineScope.launch {
                                 // Скролл к последнему сообщению
-                                if (messages.isNotEmpty()) {
-                                    listState.animateScrollToItem(messages.size)
+                                if (state.messages.isNotEmpty()) {
+                                    listState.animateScrollToItem(state.messages.size)
                                 }
                             }
                         },
-                        enabled = !isLoading && currentMessage.isNotBlank(),
+                        enabled = !state.isLoading && state.currentMessage.isNotBlank(),
                         modifier = Modifier
                             .height(56.dp)
                             .widthIn(min = 100.dp),
@@ -249,7 +228,7 @@ fun ChatScreenUI(
 }
 
 @Composable
-fun TemperatureComparisonCard(
+private fun TemperatureComparisonCard(
     analysisText: String
 ) {
     Card(
@@ -308,7 +287,7 @@ fun TemperatureComparisonCard(
 }
 
 @Composable
-fun MessageBubble(
+private fun MessageBubble(
     message: ChatMessage,
     onClick: () -> Unit = {},
     onTemperatureResultClick: (Int) -> Unit = {}
