@@ -44,6 +44,10 @@ class ChatScreenViewModel(
                 sendMessage()
             }
             
+            is ChatScreenIntent.SendContextPadding -> {
+                sendContextPadding(intent.tokens)
+            }
+            
             is ChatScreenIntent.ClearHistory -> {
                 viewModelScope.launch {
                     // Очищаем историю только для текущего режима
@@ -93,7 +97,33 @@ class ChatScreenViewModel(
             is ChatScreenIntent.ScrolledToBottom -> {
                 _state.update { it.copy(shouldScrollToBottom = false) }
             }
+            
+            is ChatScreenIntent.CopyMessageText -> {
+                viewModelScope.launch {
+                    _commandFlow.emit(ChatScreenCommand.ShowCopiedSnackbar("Текст скопирован"))
+                }
+            }
         }
+    }
+    
+    private fun sendContextPadding(paddingTokens: Int) {
+        // Создаем padding сообщение размером ~N токенов
+        val approxCharsPerToken = 4
+        val desiredChars = (paddingTokens * approxCharsPerToken).coerceAtMost(200_000)
+        
+        val chunk = "Стояло дерево. Смеркалось. Горела лампа "
+        val paddingText = buildString(desiredChars) {
+            while (length < desiredChars) {
+                append(chunk)
+            }
+            if (length > desiredChars) {
+                setLength(desiredChars)
+            }
+        }
+        
+        // Устанавливаем текст padding в поле ввода и отправляем
+        _state.update { it.copy(currentMessage = paddingText) }
+        sendMessage()
     }
     
     private fun sendMessage() {
@@ -102,26 +132,27 @@ class ChatScreenViewModel(
         
         val userMessage = currentState.currentMessage
         
-        // Очищаем поле ввода и предыдущий анализ
+        // Очищаем поле ввода и предыдущий анализ, триггерим скролл
         _state.update { 
             it.copy(
                 currentMessage = "",
                 isLoading = true,
-                similarityAnalysis = null
+                similarityAnalysis = null,
+                scrollTrigger = System.currentTimeMillis()  // Триггер для скролла
             )
         }
         
         viewModelScope.launch {
             try {
-                // Добавляем сообщение пользователя
+                // Добавляем сообщение пользователя (токены обновим после получения ответа)
                 val newUserMsg = ChatMessage(
                     text = userMessage,
                     isUser = true,
                     responseMode = currentState.responseMode
                 )
                 
-                // Сохраняем в БД (messages обновятся автоматически через Flow)
-                repository.saveMessage(newUserMsg)
+                // Сохраняем в БД и получаем ID (messages обновятся автоматически через Flow)
+                val userMessageId = repository.saveMessage(newUserMsg)
                 
                 // Формируем историю для API
                 val apiMessageHistory = if (currentState.responseMode == ResponseMode.TEMPERATURE_COMPARISON) {
@@ -151,7 +182,7 @@ class ChatScreenViewModel(
                 
                 when (result) {
                     is ApiResult.Success -> {
-                        handleSuccessResponse(result.data)
+                        handleSuccessResponse(result.data, userMessageId)
                     }
                     is ApiResult.Error -> {
                         // Ошибка
@@ -169,14 +200,25 @@ class ChatScreenViewModel(
         }
     }
     
-    private suspend fun handleSuccessResponse(response: MessageResponse) {
+    private suspend fun handleSuccessResponse(response: MessageResponse, userMessageId: Long = 0) {
         when (response) {
             is MessageResponse.StandardResponse -> {
-                // Обычный ответ
+                // Обновляем сообщение пользователя с токенами
+                if (userMessageId > 0 && response.inputTextTokens != null) {
+                    val userMsg = repository.getMessageById(userMessageId)
+                    if (userMsg != null) {
+                        repository.updateMessage(
+                            userMsg.copy(tokensCount = response.inputTextTokens)
+                        )
+                    }
+                }
+                
+                // Сохраняем ответ ассистента с токенами
                 val assistantMsg = ChatMessage(
                     text = response.text,
                     isUser = false,
-                    responseMode = ResponseMode.DEFAULT
+                    responseMode = ResponseMode.DEFAULT,
+                    tokensCount = response.completionTokens
                 )
                 repository.saveMessage(assistantMsg)
             }

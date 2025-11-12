@@ -1,5 +1,7 @@
 package ru.piterrus.aiadvent4thread
 
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -56,6 +58,8 @@ actual fun App(
                 parametersOf(screen.responseMode)
             }
             
+            val snackbarHostState = remember { SnackbarHostState() }
+            
             // Подписываемся на команды
             LaunchedEffect(viewModel) {
                 viewModel.commandFlow.collect { command ->
@@ -69,6 +73,12 @@ actual fun App(
                         is ChatScreenCommand.NavigateToStart -> {
                             currentScreen = Screen.Start
                         }
+                        is ChatScreenCommand.ShowCopiedSnackbar -> {
+                            snackbarHostState.showSnackbar(
+                                message = command.text,
+                                duration = SnackbarDuration.Short
+                            )
+                        }
                     }
                 }
             }
@@ -76,7 +86,8 @@ actual fun App(
             val state by viewModel.state.collectAsState()
             ChatScreen(
                 state = state,
-                onIntent = viewModel::intentToAction
+                onIntent = viewModel::intentToAction,
+                snackbarHostState = snackbarHostState
             )
         }
         

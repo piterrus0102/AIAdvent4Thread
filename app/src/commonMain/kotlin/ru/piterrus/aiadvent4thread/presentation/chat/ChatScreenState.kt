@@ -12,6 +12,7 @@ data class ChatScreenState(
     val shouldScrollToBottom: Boolean = false,
     val temperature0Responses: List<String> = emptyList(),
     val temperature05Responses: List<String> = emptyList(),
-    val temperature1Responses: List<String> = emptyList()
+    val temperature1Responses: List<String> = emptyList(),
+    val scrollTrigger: Long = 0L  // Триггер для принудительного скролла
 )
 

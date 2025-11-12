@@ -3,6 +3,7 @@ package ru.piterrus.aiadvent4thread.database
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -19,6 +20,9 @@ interface ChatMessageDao {
     
     @Insert
     suspend fun insertMessage(message: ChatMessageEntity): Long
+    
+    @Update
+    suspend fun updateMessage(message: ChatMessageEntity)
     
     @Query("DELETE FROM chat_messages")
     suspend fun clearAllMessages()

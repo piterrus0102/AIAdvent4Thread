@@ -21,7 +21,8 @@ class ChatRepository(
                 isUser = entity.isUser,
                 timestamp = entity.timestamp,
                 responseMode = ResponseMode.fromInt(entity.responseMode),
-                rawResponse = entity.rawResponse
+                rawResponse = entity.rawResponse,
+                tokensCount = entity.tokensCount
             )
         }
     }
@@ -36,7 +37,8 @@ class ChatRepository(
                     isUser = entity.isUser,
                     timestamp = entity.timestamp,
                     responseMode = ResponseMode.fromInt(entity.responseMode),
-                    rawResponse = entity.rawResponse
+                    rawResponse = entity.rawResponse,
+                    tokensCount = entity.tokensCount
                 )
             }
         }
@@ -50,9 +52,24 @@ class ChatRepository(
             isUser = message.isUser,
             timestamp = message.timestamp,
             responseMode = message.responseMode.value,
-            rawResponse = message.rawResponse
+            rawResponse = message.rawResponse,
+            tokensCount = message.tokensCount
         )
         return messageDao.insertMessage(entity)
+    }
+    
+    // Обновляем существующее сообщение в БД
+    override suspend fun updateMessage(message: ChatMessage) {
+        val entity = ChatMessageEntity(
+            id = message.id,
+            text = message.text,
+            isUser = message.isUser,
+            timestamp = message.timestamp,
+            responseMode = message.responseMode.value,
+            rawResponse = message.rawResponse,
+            tokensCount = message.tokensCount
+        )
+        messageDao.updateMessage(entity)
     }
     
     // Сохраняем результаты поиска для сообщения
@@ -88,7 +105,8 @@ class ChatRepository(
                 isUser = entity.isUser,
                 timestamp = entity.timestamp,
                 responseMode = ResponseMode.fromInt(entity.responseMode),
-                rawResponse = entity.rawResponse
+                rawResponse = entity.rawResponse,
+                tokensCount = entity.tokensCount
             )
         }
     }
