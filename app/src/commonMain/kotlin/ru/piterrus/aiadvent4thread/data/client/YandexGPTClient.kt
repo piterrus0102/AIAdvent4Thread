@@ -140,17 +140,47 @@ class YandexGPTClient(
                             ApiResult.Error("❌ Ошибка парсинга JSON: ${e.message}\n\nПолучен текст:\n$text")
                         }
                     } else {
-                        ApiResult.Success(MessageResponse.StandardResponse(text))
+                        ApiResult.Success(
+                            MessageResponse.StandardResponse(
+                                text = text,
+                                inputTextTokens = response.result.usage.inputTextTokens,
+                                completionTokens = response.result.usage.completionTokens
+                            )
+                        )
                     }
                 }
                 else -> {
                     val errorBody = httpResponse.bodyAsText()
-                    ApiResult.Error("❌ Неизвестная ошибка ${httpResponse.status.value}\n\n$errorBody")
+                    val errorMessage = parseErrorMessage(errorBody, httpResponse.status.value)
+                    ApiResult.Error(errorMessage)
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
             ApiResult.Error("❌ Ошибка подключения: ${e.message}\n\nПроверьте:\n• Интернет соединение\n• Правильность API ключа\n• Folder ID")
+        }
+    }
+    
+    /**
+     * Парсит сообщение об ошибке из ответа API и извлекает только полезную часть
+     */
+    private fun parseErrorMessage(errorBody: String, statusCode: Int): String {
+        return try {
+            val errorResponse: YandexGPTErrorResponse = jsonParser.decodeFromString(errorBody)
+            val fullMessage = errorResponse.error.message
+            
+            // Ищем двоеточие и берем текст после него
+            val colonIndex = fullMessage.indexOf(':')
+            val cleanMessage = if (colonIndex != -1 && colonIndex < fullMessage.length - 1) {
+                fullMessage.substring(colonIndex + 1).trim()
+            } else {
+                fullMessage
+            }
+            
+            "❌ Ошибка $statusCode: $cleanMessage"
+        } catch (e: Exception) {
+            // Если не удалось распарсить JSON, возвращаем как есть
+            "❌ Ошибка $statusCode\n\n$errorBody"
         }
     }
     

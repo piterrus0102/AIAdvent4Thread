@@ -29,6 +29,11 @@ interface IChatRepository {
     suspend fun saveMessage(message: ChatMessage): Long
     
     /**
+     * Обновить существующее сообщение в БД
+     */
+    suspend fun updateMessage(message: ChatMessage)
+    
+    /**
      * Получить сообщение по ID
      */
     suspend fun getMessageById(id: Long): ChatMessage?

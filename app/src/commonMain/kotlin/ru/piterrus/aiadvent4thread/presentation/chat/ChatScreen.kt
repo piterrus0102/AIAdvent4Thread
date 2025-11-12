@@ -1,6 +1,8 @@
 package ru.piterrus.aiadvent4thread.presentation.chat
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -19,20 +23,33 @@ import kotlinx.coroutines.launch
 import ru.piterrus.aiadvent4thread.data.model.ChatMessage
 import ru.piterrus.aiadvent4thread.data.model.ResponseMode
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     state: ChatScreenState,
     onIntent: (ChatScreenIntent) -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
     
     // Автоскролл вниз при изменении количества сообщений
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.size - 1)
+        }
+    }
+    
+    // Автоскролл при отправке сообщения (триггерится scrollTrigger)
+    LaunchedEffect(state.scrollTrigger) {
+        if (state.scrollTrigger > 0) {
+            // Даем немного времени для отрисовки нового сообщения
+            kotlinx.coroutines.delay(100)
+            if (state.messages.isNotEmpty()) {
+                listState.animateScrollToItem(state.messages.size - 1)
+            }
         }
     }
     
@@ -86,6 +103,38 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    // Dropdown menu для выбора количества токенов padding
+                    var showPaddingMenu by remember { mutableStateOf(false) }
+                    
+                    Box {
+                        IconButton(
+                            onClick = { showPaddingMenu = true },
+                            enabled = !state.isLoading
+                        ) {
+                            Text("📦", style = MaterialTheme.typography.titleLarge)
+                        }
+                        
+                        DropdownMenu(
+                            expanded = showPaddingMenu,
+                            onDismissRequest = { showPaddingMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("+16 000 токенов") },
+                                onClick = {
+                                    showPaddingMenu = false
+                                    onIntent(ChatScreenIntent.SendContextPadding(16_000))
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("+32 000 токенов") },
+                                onClick = {
+                                    showPaddingMenu = false
+                                    onIntent(ChatScreenIntent.SendContextPadding(32_000))
+                                }
+                            )
+                        }
+                    }
+                    
                     // Кнопка очистки истории
                     IconButton(onClick = { onIntent(ChatScreenIntent.ClearHistory) }) {
                         Text("🗑️", style = MaterialTheme.typography.titleLarge)
@@ -97,6 +146,9 @@ fun ChatScreen(
                     actionIconContentColor = Color.White
                 )
             )
+        },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
         }
     ) { paddingValues ->
         Column(
@@ -128,6 +180,10 @@ fun ChatScreen(
                     MessageBubble(
                         message = message,
                         onClick = { onIntent(ChatScreenIntent.MessageClicked(message)) },
+                        onLongClick = { text ->
+                            clipboardManager.setText(AnnotatedString(text))
+                            onIntent(ChatScreenIntent.CopyMessageText(text))
+                        },
                         onTemperatureResultClick = { index -> 
                             onIntent(ChatScreenIntent.TemperatureResultClicked(message, index))
                         }
@@ -198,15 +254,7 @@ fun ChatScreen(
                     )
 
                     Button(
-                        onClick = {
-                            onIntent(ChatScreenIntent.SendMessage)
-                            coroutineScope.launch {
-                                // Скролл к последнему сообщению
-                                if (state.messages.isNotEmpty()) {
-                                    listState.animateScrollToItem(state.messages.size)
-                                }
-                            }
-                        },
+                        onClick = { onIntent(ChatScreenIntent.SendMessage) },
                         enabled = !state.isLoading && state.currentMessage.isNotBlank(),
                         modifier = Modifier
                             .height(56.dp)
@@ -286,10 +334,12 @@ private fun TemperatureComparisonCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
     onClick: () -> Unit = {},
+    onLongClick: (String) -> Unit = {},
     onTemperatureResultClick: (Int) -> Unit = {}
 ) {
     Row(
@@ -431,7 +481,7 @@ private fun MessageBubble(
                         }
                     }
                 } else {
-                    // Обычное текстовое сообщение
+                    // Обычное текстовое сообщение с возможностью копирования
                     Text(
                         text = message.text,
                         style = MaterialTheme.typography.bodyMedium,
@@ -439,8 +489,47 @@ private fun MessageBubble(
                             Color.White
                         } else {
                             Color(0xFF333333) // Темно-серый для лучшей читаемости
+                        },
+                        modifier = Modifier.combinedClickable(
+                            onClick = {},
+                            onLongClick = {
+                                onLongClick(message.text)
+                            }
+                        )
+                    )
+                }
+                
+                // Метрики токенов (для всех сообщений)
+                if (message.tokensCount != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider(
+                        color = if (message.isUser) {
+                            Color.White.copy(alpha = 0.3f)
+                        } else {
+                            Color(0xFFE0E0E0)
                         }
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🔤",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "${message.tokensCount} токенов",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (message.isUser) {
+                                Color.White.copy(alpha = 0.9f)
+                            } else {
+                                Color(0xFF666666)
+                            },
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
         }

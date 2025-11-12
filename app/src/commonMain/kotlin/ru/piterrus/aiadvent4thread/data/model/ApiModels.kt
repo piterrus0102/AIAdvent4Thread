@@ -10,7 +10,11 @@ sealed class ApiResult<out T> {
 
 // Типы ответов от сервера
 sealed class MessageResponse {
-    data class StandardResponse(val text: String) : MessageResponse()
+    data class StandardResponse(
+        val text: String,
+        val inputTextTokens: Int? = null,
+        val completionTokens: Int? = null
+    ) : MessageResponse()
     data class FixedResponse(
         val results: List<YandexGPTFixedResponse>,
         val rawText: String
@@ -40,7 +44,8 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val responseMode: ResponseMode = ResponseMode.DEFAULT,
     val rawResponse: String? = null,
-    val temperatureResults: List<TemperatureResult>? = null
+    val temperatureResults: List<TemperatureResult>? = null,
+    val tokensCount: Int? = null  // Количество токенов этого сообщения
 )
 
 // Режимы ответа

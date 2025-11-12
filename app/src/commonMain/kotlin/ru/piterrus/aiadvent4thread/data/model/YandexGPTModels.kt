@@ -47,3 +47,18 @@ data class Usage(
     val totalTokens: Int
 )
 
+// Модель для ошибок API
+@Serializable
+data class YandexGPTErrorResponse(
+    val error: YandexGPTError
+)
+
+@Serializable
+data class YandexGPTError(
+    val grpcCode: Int? = null,
+    val httpCode: Int,
+    val message: String,
+    val httpStatus: String? = null,
+    val details: List<String> = emptyList()
+)
+

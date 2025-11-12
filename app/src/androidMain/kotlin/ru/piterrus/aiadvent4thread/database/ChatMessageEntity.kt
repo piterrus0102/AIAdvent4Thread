@@ -11,6 +11,7 @@ data class ChatMessageEntity(
     val isUser: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
     val responseMode: Int = 0,
-    val rawResponse: String? = null
+    val rawResponse: String? = null,
+    val tokensCount: Int? = null  // Количество токенов этого сообщения
 )
 
