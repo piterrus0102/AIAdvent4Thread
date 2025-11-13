@@ -8,6 +8,7 @@ sealed interface ChatScreenIntent {
     object SendMessage : ChatScreenIntent
     data class SendContextPadding(val tokens: Int) : ChatScreenIntent
     object ClearHistory : ChatScreenIntent
+    object CompressHistory : ChatScreenIntent  // Новый Intent для сжатия истории
     data class ResponseModeToggle(val mode: ResponseMode) : ChatScreenIntent
     data class MessageClicked(val message: ChatMessage) : ChatScreenIntent
     data class TemperatureResultClicked(val message: ChatMessage, val index: Int) : ChatScreenIntent

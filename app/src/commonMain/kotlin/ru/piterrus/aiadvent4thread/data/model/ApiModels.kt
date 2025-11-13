@@ -13,7 +13,8 @@ sealed class MessageResponse {
     data class StandardResponse(
         val text: String,
         val inputTextTokens: Int? = null,
-        val completionTokens: Int? = null
+        val completionTokens: Int? = null,
+        val totalTokens: Int? = null
     ) : MessageResponse()
     data class FixedResponse(
         val results: List<YandexGPTFixedResponse>,
@@ -45,7 +46,10 @@ data class ChatMessage(
     val responseMode: ResponseMode = ResponseMode.DEFAULT,
     val rawResponse: String? = null,
     val temperatureResults: List<TemperatureResult>? = null,
-    val tokensCount: Int? = null  // Количество токенов этого сообщения
+    val tokensCount: Int? = null,  // Количество токенов этого сообщения
+    val totalTokens: Int? = null,  // Общее количество токенов (input + completion)
+    val isSummary: Boolean = false,  // Флаг: является ли это сообщение результатом сжатия
+    val tokensBeforeCompression: Int? = null  // Сколько токенов было до сжатия (для сжатых сообщений)
 )
 
 // Режимы ответа

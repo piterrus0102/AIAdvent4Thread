@@ -144,7 +144,8 @@ class YandexGPTClient(
                             MessageResponse.StandardResponse(
                                 text = text,
                                 inputTextTokens = response.result.usage.inputTextTokens,
-                                completionTokens = response.result.usage.completionTokens
+                                completionTokens = response.result.usage.completionTokens,
+                                totalTokens = response.result.usage.totalTokens
                             )
                         )
                     }
@@ -246,6 +247,77 @@ class YandexGPTClient(
             println("❌ Критическая ошибка при выполнении запросов: ${e.message}")
             e.printStackTrace()
             ApiResult.Error("❌ Ошибка при выполнении запросов: ${e.message}")
+        }
+    }
+    
+    /**
+     * Суммаризирует историю сообщений для сжатия диалога.
+     * Агент-суммаризатор работает "на чистую" - без памяти, только с system-промптом.
+     * Возвращает текст резюме и количество токенов в ответе.
+     */
+    suspend fun summarizeMessages(messages: List<Message>): ApiResult<Pair<String, Int>> {
+        return try {
+            println("📝 Начинаем суммаризацию ${messages.size} сообщений...")
+            
+            // Формируем текст из истории сообщений для суммаризации
+            val historyText = buildString {
+                appendLine("История сообщений для суммаризации:")
+                appendLine()
+                messages.forEachIndexed { index, message ->
+                    val roleEmoji = when (message.role) {
+                        "user" -> "👤"
+                        "assistant" -> "🤖"
+                        else -> "⚙️"
+                    }
+                    appendLine("${index + 1}. $roleEmoji ${message.role.uppercase()}: ${message.text}")
+                    appendLine()
+                }
+            }
+            
+            // Создаем запрос с system-промптом агента-суммаризатора
+            val allMessages = listOf(
+                Message(role = "system", text = Prompts.messageSummarizerPrompt),
+                Message(role = "user", text = historyText)
+            )
+            
+            val request = YandexGPTRequest(
+                modelUri = "gpt://$catalogId/yandexgpt/latest",
+                completionOptions = CompletionOptions(
+                    stream = false,
+                    temperature = 0.3,  // Низкая температура для стабильного результата
+                    maxTokens = 2000
+                ),
+                messages = allMessages
+            )
+            
+            val httpResponse: HttpResponse = client.post("https://llm.api.cloud.yandex.net/foundationModels/v1/completion") {
+                contentType(ContentType.Application.Json)
+                header("Authorization", "Api-Key $apiKey")
+                header("x-folder-id", catalogId)
+                setBody(request)
+            }
+            
+            when (httpResponse.status.value) {
+                200 -> {
+                    val response: YandexGPTResponse = httpResponse.body()
+                    val summaryText = response.result.alternatives.firstOrNull()?.message?.text 
+                        ?: "Не удалось создать резюме"
+                    val completionTokens = response.result.usage.completionTokens
+                    
+                    println("✅ Суммаризация завершена успешно (токенов: $completionTokens)")
+                    ApiResult.Success(Pair(summaryText, completionTokens))
+                }
+                else -> {
+                    val errorBody = httpResponse.bodyAsText()
+                    val errorMessage = parseErrorMessage(errorBody, httpResponse.status.value)
+                    println("❌ Ошибка суммаризации: $errorMessage")
+                    ApiResult.Error(errorMessage)
+                }
+            }
+        } catch (e: Exception) {
+            println("❌ Критическая ошибка при суммаризации: ${e.message}")
+            e.printStackTrace()
+            ApiResult.Error("❌ Ошибка при суммаризации: ${e.message}")
         }
     }
 }

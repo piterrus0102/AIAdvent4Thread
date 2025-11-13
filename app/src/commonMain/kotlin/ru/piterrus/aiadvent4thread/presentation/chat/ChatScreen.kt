@@ -35,19 +35,13 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     
-    // Автоскролл вниз при изменении количества сообщений
+    // Автоскролл вниз ТОЛЬКО когда последнее сообщение от пользователя
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.size - 1)
-        }
-    }
-    
-    // Автоскролл при отправке сообщения (триггерится scrollTrigger)
-    LaunchedEffect(state.scrollTrigger) {
-        if (state.scrollTrigger > 0) {
-            // Даем немного времени для отрисовки нового сообщения
-            kotlinx.coroutines.delay(100)
-            if (state.messages.isNotEmpty()) {
+            val lastMessage = state.messages.last()
+            // Скроллим только если последнее сообщение от пользователя
+            if (lastMessage.isUser) {
+                kotlinx.coroutines.delay(50) // Небольшая задержка для отрисовки
                 listState.animateScrollToItem(state.messages.size - 1)
             }
         }
@@ -135,6 +129,14 @@ fun ChatScreen(
                         }
                     }
                     
+                    // Кнопка сжатия истории
+                    IconButton(
+                        onClick = { onIntent(ChatScreenIntent.CompressHistory) },
+                        enabled = !state.isLoading && state.messages.size >= 10
+                    ) {
+                        Text("🗜️", style = MaterialTheme.typography.titleLarge)
+                    }
+                    
                     // Кнопка очистки истории
                     IconButton(onClick = { onIntent(ChatScreenIntent.ClearHistory) }) {
                         Text("🗑️", style = MaterialTheme.typography.titleLarge)
@@ -176,18 +178,51 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 
-                items(state.messages) { message ->
-                    MessageBubble(
-                        message = message,
-                        onClick = { onIntent(ChatScreenIntent.MessageClicked(message)) },
-                        onLongClick = { text ->
-                            clipboardManager.setText(AnnotatedString(text))
-                            onIntent(ChatScreenIntent.CopyMessageText(text))
-                        },
-                        onTemperatureResultClick = { index -> 
-                            onIntent(ChatScreenIntent.TemperatureResultClicked(message, index))
+                // Отображаем сообщения попарно с статистикой токенов
+                val messages = state.messages
+                var i = 0
+                while (i < messages.size) {
+                    val message = messages[i]
+                    
+                    item(key = "message_${message.id}") {
+                        MessageBubble(
+                            message = message,
+                            onClick = { onIntent(ChatScreenIntent.MessageClicked(message)) },
+                            onLongClick = { text ->
+                                clipboardManager.setText(AnnotatedString(text))
+                                onIntent(ChatScreenIntent.CopyMessageText(text))
+                            },
+                            onTemperatureResultClick = { index -> 
+                                onIntent(ChatScreenIntent.TemperatureResultClicked(message, index))
+                            }
+                        )
+                    }
+                    
+                    // Если это сжатое сообщение, показываем статистику сжатия
+                    if (message.isSummary && message.tokensBeforeCompression != null && message.tokensCount != null) {
+                        item(key = "compression_stats_${message.id}") {
+                            CompressionStatisticsCard(
+                                tokensBefore = message.tokensBeforeCompression,
+                                tokensAfter = message.tokensCount
+                            )
                         }
-                    )
+                    }
+                    // Иначе, если это сообщение от агента (не пользователя) и есть статистика токенов, показываем её
+                    else if (!message.isUser && message.totalTokens != null && message.tokensCount != null) {
+                        // Находим предыдущее сообщение пользователя для расчета inputTokens
+                        val userMessage = if (i > 0) messages[i - 1] else null
+                        val inputTokens = userMessage?.tokensCount
+                        
+                        item(key = "tokens_${message.id}") {
+                            TokensStatisticsCard(
+                                inputTokens = inputTokens,
+                                completionTokens = message.tokensCount,
+                                totalTokens = message.totalTokens
+                            )
+                        }
+                    }
+                    
+                    i++
                 }
                 
                 // Элемент сравнения для последнего сообщения с температурным сравнением
@@ -271,6 +306,252 @@ fun ChatScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TokensStatisticsCard(
+    inputTokens: Int?,
+    completionTokens: Int?,
+    totalTokens: Int?
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFF5F5F5)
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Input tokens
+                if (inputTokens != null) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "📥",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "$inputTokens",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF6A0DAD)
+                        )
+                        Text(
+                            text = "input",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF666666),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+                
+                // Completion tokens
+                if (completionTokens != null) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "📤",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "$completionTokens",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF6A0DAD)
+                        )
+                        Text(
+                            text = "output",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF666666),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+                
+                // Total tokens
+                if (totalTokens != null) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "🔤",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "$totalTokens",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFF7F50)
+                        )
+                        Text(
+                            text = "total",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF666666),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompressionStatisticsCard(
+    tokensBefore: Int,
+    tokensAfter: Int
+) {
+    val compressionRatio = ((tokensBefore - tokensAfter).toFloat() / tokensBefore.toFloat() * 100).toInt()
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFFFF3E0) // Светло-оранжевый фон
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 4.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Заголовок
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "🗜️",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "Статистика сжатия",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFF7F50)
+                )
+            }
+            
+            HorizontalDivider(color = Color(0xFFFFE0B2))
+            
+            // Статистика
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                // До сжатия
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "📦",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "$tokensBefore",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF6A0DAD)
+                    )
+                    Text(
+                        text = "до",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF666666),
+                        fontSize = 11.sp
+                    )
+                }
+                
+                // Стрелка
+                Text(
+                    text = "→",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color(0xFFFF7F50),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                
+                // После сжатия
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "📦",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "$tokensAfter",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF4CAF50)
+                    )
+                    Text(
+                        text = "после",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF666666),
+                        fontSize = 11.sp
+                    )
+                }
+                
+                // Разделитель
+                VerticalDivider(
+                    modifier = Modifier
+                        .height(60.dp)
+                        .padding(vertical = 4.dp),
+                    color = Color(0xFFFFE0B2)
+                )
+                
+                // Экономия
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "💾",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "$compressionRatio%",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFF7F50)
+                    )
+                    Text(
+                        text = "сжатие",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF666666),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+            
+            // Подробности
+            Text(
+                text = "Экономия: ${tokensBefore - tokensAfter} токенов",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF666666),
+                fontSize = 11.sp,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     }
 }
@@ -381,15 +662,17 @@ private fun MessageBubble(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = if (message.isUser) "👤" else "🤖",
+                        text = if (message.isSummary) "🗜️" else if (message.isUser) "👤" else "🤖",
                         style = MaterialTheme.typography.labelMedium
                     )
                     Text(
-                        text = if (message.isUser) "Вы" else "YandexGPT",
+                        text = if (message.isSummary) "Резюме" else if (message.isUser) "Вы" else "YandexGPT",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (message.isUser) {
                             Color.White
+                        } else if (message.isSummary) {
+                            Color(0xFFFF7F50) // Коралловый для сжатых сообщений
                         } else {
                             Color(0xFF6A0DAD) // Фиолетовый
                         }
@@ -497,39 +780,6 @@ private fun MessageBubble(
                             }
                         )
                     )
-                }
-                
-                // Метрики токенов (для всех сообщений)
-                if (message.tokensCount != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    HorizontalDivider(
-                        color = if (message.isUser) {
-                            Color.White.copy(alpha = 0.3f)
-                        } else {
-                            Color(0xFFE0E0E0)
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🔤",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            text = "${message.tokensCount} токенов",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (message.isUser) {
-                                Color.White.copy(alpha = 0.9f)
-                            } else {
-                                Color(0xFF666666)
-                            },
-                            fontSize = 11.sp
-                        )
-                    }
                 }
             }
         }

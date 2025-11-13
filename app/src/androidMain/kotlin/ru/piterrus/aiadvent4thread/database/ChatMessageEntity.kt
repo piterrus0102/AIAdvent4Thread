@@ -12,6 +12,9 @@ data class ChatMessageEntity(
     val timestamp: Long = System.currentTimeMillis(),
     val responseMode: Int = 0,
     val rawResponse: String? = null,
-    val tokensCount: Int? = null  // Количество токенов этого сообщения
+    val tokensCount: Int? = null,  // Количество токенов этого сообщения
+    val totalTokens: Int? = null,  // Общее количество токенов (input + completion)
+    val isSummary: Boolean = false,  // Флаг: является ли это сообщение результатом сжатия
+    val tokensBeforeCompression: Int? = null  // Сколько токенов было до сжатия (для сжатых сообщений)
 )
 
