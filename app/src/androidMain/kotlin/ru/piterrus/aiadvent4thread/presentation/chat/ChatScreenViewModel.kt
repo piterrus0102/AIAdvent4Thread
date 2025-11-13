@@ -64,6 +64,10 @@ class ChatScreenViewModel(
                 }
             }
             
+            is ChatScreenIntent.CompressHistory -> {
+                compressHistory()
+            }
+            
             is ChatScreenIntent.ResponseModeToggle -> {
                 _state.update { it.copy(responseMode = intent.mode) }
             }
@@ -132,13 +136,12 @@ class ChatScreenViewModel(
         
         val userMessage = currentState.currentMessage
         
-        // Очищаем поле ввода и предыдущий анализ, триггерим скролл
+        // Очищаем поле ввода и предыдущий анализ
         _state.update { 
             it.copy(
                 currentMessage = "",
                 isLoading = true,
-                similarityAnalysis = null,
-                scrollTrigger = System.currentTimeMillis()  // Триггер для скролла
+                similarityAnalysis = null
             )
         }
         
@@ -162,6 +165,8 @@ class ChatScreenViewModel(
                         Message(
                             role = if (chatMsg.isUser) "user" else "assistant",
                             text = chatMsg.text
+                            // Сжатые сообщения (isSummary=true) тоже отправляются как "assistant"
+                            // Это позволяет основному агенту понимать контекст из резюме
                         )
                     }
                 }
@@ -213,12 +218,13 @@ class ChatScreenViewModel(
                     }
                 }
                 
-                // Сохраняем ответ ассистента с токенами
+                // Сохраняем ответ ассистента с токенами (включая totalTokens для пары)
                 val assistantMsg = ChatMessage(
                     text = response.text,
                     isUser = false,
                     responseMode = ResponseMode.DEFAULT,
-                    tokensCount = response.completionTokens
+                    tokensCount = response.completionTokens,
+                    totalTokens = response.totalTokens  // Общее количество токенов для пары сообщений
                 )
                 repository.saveMessage(assistantMsg)
             }
@@ -350,6 +356,115 @@ class ChatScreenViewModel(
                     it.copy(similarityAnalysis = "Ошибка анализа: ${analysisResult.message}")
                 }
                 println("❌ Ошибка анализа: ${analysisResult.message}")
+            }
+        }
+    }
+    
+    /**
+     * Сжимает последние 10 сообщений в одно резюме.
+     * Отправляет их агенту-суммаризатору и заменяет в истории на одно сжатое сообщение.
+     */
+    private fun compressHistory() {
+        val currentState = _state.value
+        val messages = currentState.messages
+        
+        // Проверяем, что есть хотя бы 10 сообщений
+        if (messages.size < 10) {
+            viewModelScope.launch {
+                _commandFlow.emit(
+                    ChatScreenCommand.ShowCopiedSnackbar("Недостаточно сообщений для сжатия (минимум 10)")
+                )
+            }
+            return
+        }
+        
+        // Устанавливаем флаг загрузки
+        _state.update { it.copy(isLoading = true) }
+        
+        viewModelScope.launch {
+            try {
+                // Берем последние 10 сообщений
+                val last10Messages = messages.takeLast(10)
+                
+                println("📝 Сжимаем последние 10 сообщений...")
+                println("📝 ID сообщений для сжатия: ${last10Messages.map { it.id }}")
+                
+                // Конвертируем их в формат для API (исключаем сжатые сообщения и системные)
+                val messagesToSummarize = last10Messages
+                    .filter { !it.isSummary }  // Не включаем уже сжатые сообщения
+                    .map { chatMsg ->
+                        Message(
+                            role = if (chatMsg.isUser) "user" else "assistant",
+                            text = chatMsg.text
+                        )
+                    }
+                
+                if (messagesToSummarize.isEmpty()) {
+                    _commandFlow.emit(
+                        ChatScreenCommand.ShowCopiedSnackbar("Нечего сжимать - все сообщения уже сжаты")
+                    )
+                    _state.update { it.copy(isLoading = false) }
+                    return@launch
+                }
+                
+                // Берем totalTokens из последнего сообщения агента перед сжатием (из последней плашки)
+                val lastAgentMessage = last10Messages.lastOrNull { !it.isUser }
+                val totalTokensBefore = lastAgentMessage?.totalTokens ?: 0
+                
+                println("📝 Суммарное количество токенов до сжатия (из последней плашки): $totalTokensBefore")
+                
+                // Отправляем агенту-суммаризатору
+                val summaryResult = gptClient.summarizeMessages(messagesToSummarize)
+                
+                when (summaryResult) {
+                    is ApiResult.Success -> {
+                        val (summaryText, completionTokens) = summaryResult.data
+                        
+                        println("📝 Количество токенов после сжатия: $completionTokens")
+                        
+                        // Создаем сжатое сообщение
+                        val summaryMessage = ChatMessage(
+                            text = summaryText,
+                            isUser = false,
+                            responseMode = currentState.responseMode,
+                            isSummary = true,  // Помечаем как сжатое
+                            tokensCount = completionTokens,  // Токены резюме
+                            tokensBeforeCompression = totalTokensBefore,  // Токены до сжатия
+                            timestamp = last10Messages.last().timestamp  // Берем время последнего сообщения
+                        )
+                        
+                        // Сохраняем сжатое сообщение в БД
+                        repository.saveMessage(summaryMessage)
+                        
+                        // Удаляем оригинальные 10 сообщений из БД
+                        val idsToDelete = last10Messages.map { it.id }
+                        repository.deleteMessages(idsToDelete)
+                        
+                        println("✅ Сжатие завершено успешно")
+                        println("✅ Удалено сообщений: ${idsToDelete.size}")
+                        println("✅ Создано сжатое сообщение")
+                        println("📊 Экономия: ${totalTokensBefore - completionTokens} токенов")
+                        
+                        // Показываем уведомление
+                        _commandFlow.emit(
+                            ChatScreenCommand.ShowCopiedSnackbar("✅ История сжата: 10 сообщений → 1 резюме")
+                        )
+                    }
+                    is ApiResult.Error -> {
+                        println("❌ Ошибка сжатия: ${summaryResult.message}")
+                        _commandFlow.emit(
+                            ChatScreenCommand.ShowCopiedSnackbar("❌ Ошибка сжатия: ${summaryResult.message}")
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                println("❌ Критическая ошибка при сжатии: ${e.message}")
+                e.printStackTrace()
+                _commandFlow.emit(
+                    ChatScreenCommand.ShowCopiedSnackbar("❌ Ошибка при сжатии: ${e.message}")
+                )
+            } finally {
+                _state.update { it.copy(isLoading = false) }
             }
         }
     }

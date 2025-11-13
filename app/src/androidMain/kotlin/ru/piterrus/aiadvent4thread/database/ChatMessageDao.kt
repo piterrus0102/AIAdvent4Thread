@@ -29,5 +29,8 @@ interface ChatMessageDao {
     
     @Query("DELETE FROM chat_messages WHERE responseMode = :mode")
     suspend fun clearMessagesByMode(mode: Int)
+    
+    @Query("DELETE FROM chat_messages WHERE id IN (:messageIds)")
+    suspend fun deleteMessagesByIds(messageIds: List<Long>)
 }
 

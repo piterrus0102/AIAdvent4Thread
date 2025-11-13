@@ -58,5 +58,10 @@ interface IChatRepository {
      * Получить результаты поиска для сообщения
      */
     fun getSearchResults(messageId: Long): Flow<List<YandexGPTFixedResponse>>
+    
+    /**
+     * Удалить сообщения по списку ID
+     */
+    suspend fun deleteMessages(messageIds: List<Long>)
 }
 

@@ -22,7 +22,10 @@ class ChatRepository(
                 timestamp = entity.timestamp,
                 responseMode = ResponseMode.fromInt(entity.responseMode),
                 rawResponse = entity.rawResponse,
-                tokensCount = entity.tokensCount
+                tokensCount = entity.tokensCount,
+                totalTokens = entity.totalTokens,
+                isSummary = entity.isSummary,
+                tokensBeforeCompression = entity.tokensBeforeCompression
             )
         }
     }
@@ -38,7 +41,10 @@ class ChatRepository(
                     timestamp = entity.timestamp,
                     responseMode = ResponseMode.fromInt(entity.responseMode),
                     rawResponse = entity.rawResponse,
-                    tokensCount = entity.tokensCount
+                    tokensCount = entity.tokensCount,
+                    totalTokens = entity.totalTokens,
+                    isSummary = entity.isSummary,
+                    tokensBeforeCompression = entity.tokensBeforeCompression
                 )
             }
         }
@@ -53,7 +59,10 @@ class ChatRepository(
             timestamp = message.timestamp,
             responseMode = message.responseMode.value,
             rawResponse = message.rawResponse,
-            tokensCount = message.tokensCount
+            tokensCount = message.tokensCount,
+            totalTokens = message.totalTokens,
+            isSummary = message.isSummary,
+            tokensBeforeCompression = message.tokensBeforeCompression
         )
         return messageDao.insertMessage(entity)
     }
@@ -67,7 +76,10 @@ class ChatRepository(
             timestamp = message.timestamp,
             responseMode = message.responseMode.value,
             rawResponse = message.rawResponse,
-            tokensCount = message.tokensCount
+            tokensCount = message.tokensCount,
+            totalTokens = message.totalTokens,
+            isSummary = message.isSummary,
+            tokensBeforeCompression = message.tokensBeforeCompression
         )
         messageDao.updateMessage(entity)
     }
@@ -106,7 +118,10 @@ class ChatRepository(
                 timestamp = entity.timestamp,
                 responseMode = ResponseMode.fromInt(entity.responseMode),
                 rawResponse = entity.rawResponse,
-                tokensCount = entity.tokensCount
+                tokensCount = entity.tokensCount,
+                totalTokens = entity.totalTokens,
+                isSummary = entity.isSummary,
+                tokensBeforeCompression = entity.tokensBeforeCompression
             )
         }
     }
@@ -123,6 +138,13 @@ class ChatRepository(
         // (в текущей реализации нет прямой связи, поэтому очищаем все результаты)
         // TODO: В будущем можно добавить связь через JOIN
         messageDao.clearMessagesByMode(mode.value)
+    }
+    
+    // Удаляем сообщения по списку ID
+    override suspend fun deleteMessages(messageIds: List<Long>) {
+        if (messageIds.isNotEmpty()) {
+            messageDao.deleteMessagesByIds(messageIds)
+        }
     }
 }
 
