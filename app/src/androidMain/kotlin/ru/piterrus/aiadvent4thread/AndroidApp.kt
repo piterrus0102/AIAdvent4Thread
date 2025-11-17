@@ -10,6 +10,7 @@ import ru.piterrus.aiadvent4thread.presentation.chat.*
 import ru.piterrus.aiadvent4thread.presentation.discussion.*
 import ru.piterrus.aiadvent4thread.presentation.expert.*
 import ru.piterrus.aiadvent4thread.presentation.huggingface.*
+import ru.piterrus.aiadvent4thread.presentation.mcp.*
 import ru.piterrus.aiadvent4thread.presentation.search.*
 import ru.piterrus.aiadvent4thread.presentation.start.*
 import ru.piterrus.aiadvent4thread.presentation.temperature.*
@@ -39,6 +40,9 @@ actual fun App(
                         }
                         is StartScreenCommand.NavigateToHuggingFace -> {
                             currentScreen = Screen.HuggingFace
+                        }
+                        is StartScreenCommand.NavigateToMcp -> {
+                            currentScreen = Screen.Mcp
                         }
                     }
                 }
@@ -211,6 +215,27 @@ actual fun App(
                 onIntent = viewModel::intentToAction
             )
         }
+        
+        is Screen.Mcp -> {
+            val viewModel: McpScreenViewModel = koinViewModel()
+            
+            // Подписываемся на команды
+            LaunchedEffect(viewModel) {
+                viewModel.commandFlow.collect { command ->
+                    when (command) {
+                        is McpScreenCommand.NavigateBack -> {
+                            currentScreen = Screen.Start
+                        }
+                    }
+                }
+            }
+            
+            val state by viewModel.state.collectAsState()
+            McpScreen(
+                state = state,
+                onIntent = viewModel::intentToAction
+            )
+        }
     }
 }
 
@@ -223,4 +248,5 @@ sealed class Screen {
     data class ExpertDetail(val expert: ExpertRole, val expertNumber: Int) : Screen()
     data class TemperatureDetail(val temperatureResult: TemperatureResult) : Screen()
     object HuggingFace : Screen()
+    object Mcp : Screen()
 }

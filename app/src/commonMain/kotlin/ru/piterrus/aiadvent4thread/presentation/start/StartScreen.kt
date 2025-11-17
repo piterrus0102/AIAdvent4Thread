@@ -112,6 +112,16 @@ fun StartScreen(
                 onClick = { onIntent(StartScreenIntent.HuggingFaceSelected) }
             )
             
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Карточка "MCP (Model Context Protocol)"
+            ModeCard(
+                icon = "🔌",
+                title = "MCP Connection",
+                description = "Подключение к MCP серверу и получение инструментов",
+                onClick = { onIntent(StartScreenIntent.McpSelected) }
+            )
+            
             Spacer(modifier = Modifier.height(40.dp))
         }
     }

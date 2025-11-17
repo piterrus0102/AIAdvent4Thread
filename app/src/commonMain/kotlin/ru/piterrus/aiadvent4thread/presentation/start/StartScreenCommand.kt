@@ -6,5 +6,6 @@ sealed interface StartScreenCommand {
     data class NavigateToChat(val mode: ResponseMode) : StartScreenCommand
     object NavigateToDiscussion : StartScreenCommand
     object NavigateToHuggingFace : StartScreenCommand
+    object NavigateToMcp : StartScreenCommand
 }
 
