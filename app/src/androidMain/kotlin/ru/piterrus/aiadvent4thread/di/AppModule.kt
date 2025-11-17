@@ -1,10 +1,16 @@
 package ru.piterrus.aiadvent4thread.di
 
+import io.ktor.client.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.logging.*
+import io.ktor.serialization.kotlinx.json.*
+import kotlinx.serialization.json.Json
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 import ru.piterrus.aiadvent4thread.BuildConfig
 import ru.piterrus.aiadvent4thread.PreferencesManager
 import ru.piterrus.aiadvent4thread.data.client.HuggingFaceClient
+import ru.piterrus.aiadvent4thread.data.client.McpClient
 import ru.piterrus.aiadvent4thread.data.client.YandexGPTClient
 import ru.piterrus.aiadvent4thread.data.model.ResponseMode
 import ru.piterrus.aiadvent4thread.data.model.TemperatureResult
@@ -16,6 +22,7 @@ import ru.piterrus.aiadvent4thread.presentation.chat.ChatScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.discussion.DiscussionScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.expert.ExpertDetailScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.huggingface.HuggingFaceScreenViewModel
+import ru.piterrus.aiadvent4thread.presentation.mcp.McpScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.search.SearchResultsScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.start.StartScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.temperature.TemperatureDetailScreenViewModel
@@ -36,6 +43,25 @@ val appModule = module {
         HuggingFaceClient(
             huggingFaceToken = BuildConfig.HUGGINGFACE_TOKEN
         )
+    }
+    
+    single {
+        // Создаем отдельный HttpClient для MCP
+        val mcpHttpClient = HttpClient {
+            install(ContentNegotiation) {
+                json(Json {
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                    prettyPrint = true
+                })
+            }
+            install(Logging) {
+                logger = Logger.DEFAULT
+                level = LogLevel.INFO
+            }
+        }
+        
+        McpClient(httpClient = mcpHttpClient)
     }
     
     // Data Layer - Database & Repository
@@ -67,6 +93,12 @@ val appModule = module {
     viewModel {
         HuggingFaceScreenViewModel(
             hfClient = get()
+        )
+    }
+    
+    viewModel {
+        McpScreenViewModel(
+            mcpClient = get()
         )
     }
     

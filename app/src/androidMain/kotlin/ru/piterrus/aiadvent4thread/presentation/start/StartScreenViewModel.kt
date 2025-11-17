@@ -34,6 +34,11 @@ class StartScreenViewModel : ViewModel() {
                     _commandFlow.emit(StartScreenCommand.NavigateToHuggingFace)
                 }
             }
+            is StartScreenIntent.McpSelected -> {
+                viewModelScope.launch {
+                    _commandFlow.emit(StartScreenCommand.NavigateToMcp)
+                }
+            }
         }
     }
 }

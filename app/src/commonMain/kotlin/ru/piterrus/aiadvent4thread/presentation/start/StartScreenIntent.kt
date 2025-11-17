@@ -6,5 +6,6 @@ sealed interface StartScreenIntent {
     data class ModeSelected(val mode: ResponseMode) : StartScreenIntent
     object DiscussionSelected : StartScreenIntent
     object HuggingFaceSelected : StartScreenIntent
+    object McpSelected : StartScreenIntent
 }
 
