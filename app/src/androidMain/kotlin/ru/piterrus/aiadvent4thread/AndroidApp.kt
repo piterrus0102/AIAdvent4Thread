@@ -44,6 +44,9 @@ actual fun App(
                         is StartScreenCommand.NavigateToMcp -> {
                             currentScreen = Screen.Mcp
                         }
+                        is StartScreenCommand.NavigateToServerChat -> {
+                            currentScreen = Screen.ServerChat
+                        }
                     }
                 }
             }
@@ -236,6 +239,27 @@ actual fun App(
                 onIntent = viewModel::intentToAction
             )
         }
+        
+        is Screen.ServerChat -> {
+            val viewModel: ru.piterrus.aiadvent4thread.presentation.serverchat.ServerChatScreenViewModel = koinViewModel()
+            
+            // Подписываемся на команды
+            LaunchedEffect(viewModel) {
+                viewModel.commandFlow.collect { command ->
+                    when (command) {
+                        is ru.piterrus.aiadvent4thread.presentation.serverchat.ServerChatScreenCommand.NavigateBack -> {
+                            currentScreen = Screen.Start
+                        }
+                    }
+                }
+            }
+            
+            val state by viewModel.state.collectAsState()
+            ru.piterrus.aiadvent4thread.presentation.serverchat.ServerChatScreen(
+                state = state,
+                onIntent = viewModel::intentToAction
+            )
+        }
     }
 }
 
@@ -249,4 +273,5 @@ sealed class Screen {
     data class TemperatureDetail(val temperatureResult: TemperatureResult) : Screen()
     object HuggingFace : Screen()
     object Mcp : Screen()
+    object ServerChat : Screen()
 }

@@ -7,5 +7,6 @@ sealed interface StartScreenCommand {
     object NavigateToDiscussion : StartScreenCommand
     object NavigateToHuggingFace : StartScreenCommand
     object NavigateToMcp : StartScreenCommand
+    object NavigateToServerChat : StartScreenCommand
 }
 

@@ -2,19 +2,21 @@
   "name": "mcp-proxy-server",
   "version": "1.0.0",
   "description": "HTTP proxy server for MCP (Model Context Protocol) connections",
-  "main": "server.js",
+  "main": "mcpserver.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node mcpserver.js",
+    "dev": "node --watch mcpserver.js",
+    "local": "node localserver.js",
+    "local:dev": "node --watch localserver.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "express": "^4.21.2",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2"
   },
   "engines": {
     "node": ">=18.0.0"
   }
 }
-
