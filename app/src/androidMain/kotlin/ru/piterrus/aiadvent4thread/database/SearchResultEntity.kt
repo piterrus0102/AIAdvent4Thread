@@ -25,3 +25,4 @@ data class SearchResultEntity(
     val message: String
 )
 
+

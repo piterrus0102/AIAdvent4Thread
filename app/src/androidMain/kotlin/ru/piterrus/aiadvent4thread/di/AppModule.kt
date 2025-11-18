@@ -10,6 +10,7 @@ import org.koin.dsl.module
 import ru.piterrus.aiadvent4thread.BuildConfig
 import ru.piterrus.aiadvent4thread.PreferencesManager
 import ru.piterrus.aiadvent4thread.data.client.HuggingFaceClient
+import ru.piterrus.aiadvent4thread.data.client.LocalServerClient
 import ru.piterrus.aiadvent4thread.data.client.McpClient
 import ru.piterrus.aiadvent4thread.data.client.YandexGPTClient
 import ru.piterrus.aiadvent4thread.data.model.ResponseMode
@@ -24,6 +25,7 @@ import ru.piterrus.aiadvent4thread.presentation.expert.ExpertDetailScreenViewMod
 import ru.piterrus.aiadvent4thread.presentation.huggingface.HuggingFaceScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.mcp.McpScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.search.SearchResultsScreenViewModel
+import ru.piterrus.aiadvent4thread.presentation.serverchat.ServerChatScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.start.StartScreenViewModel
 import ru.piterrus.aiadvent4thread.presentation.temperature.TemperatureDetailScreenViewModel
 
@@ -64,6 +66,10 @@ val appModule = module {
         McpClient(httpClient = mcpHttpClient)
     }
     
+    single {
+        LocalServerClient()
+    }
+    
     // Data Layer - Database & Repository
     single { ChatDatabase.getDatabase(get()) }
     
@@ -92,13 +98,20 @@ val appModule = module {
     
     viewModel {
         HuggingFaceScreenViewModel(
-            hfClient = get()
+            hfClient = get(),
+            serverClient = get()
         )
     }
     
     viewModel {
         McpScreenViewModel(
             mcpClient = get()
+        )
+    }
+    
+    viewModel {
+        ServerChatScreenViewModel(
+            serverClient = get()
         )
     }
     

@@ -14,6 +14,12 @@ data class HuggingFaceScreenState(
     val isSthenoLoading: Boolean = false,
     val isMiniMaxLoading: Boolean = false,
     val isQwen2Loading: Boolean = false,
-    val qwen2ThinkingMode: Boolean = true
+    val qwen2ThinkingMode: Boolean = true,
+    // Счетчики сообщений для каждой модели (синхронизируются с localserver)
+    val modelCounts: Map<String, Int> = mapOf(
+        "L3-8B-Stheno" to 0,
+        "MiniMax-M2" to 0,
+        "Qwen2.5-7B-Instruct" to 0
+    )
 )
 

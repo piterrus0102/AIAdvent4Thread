@@ -122,6 +122,16 @@ fun StartScreen(
                 onClick = { onIntent(StartScreenIntent.McpSelected) }
             )
             
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Карточка "Server Chat (MCP Tool)"
+            ModeCard(
+                icon = "🖥️",
+                title = "Server Chat",
+                description = "Чат через локальный сервер с MCP инструментами",
+                onClick = { onIntent(StartScreenIntent.ServerChatSelected) }
+            )
+            
             Spacer(modifier = Modifier.height(40.dp))
         }
     }

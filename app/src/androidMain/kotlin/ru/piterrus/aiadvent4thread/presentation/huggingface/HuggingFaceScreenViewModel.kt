@@ -11,16 +11,66 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.piterrus.aiadvent4thread.data.client.HuggingFaceClient
+import ru.piterrus.aiadvent4thread.data.client.LocalServerClient
 import ru.piterrus.aiadvent4thread.data.model.*
 
 class HuggingFaceScreenViewModel(
-    private val hfClient: HuggingFaceClient
+    private val hfClient: HuggingFaceClient,
+    private val serverClient: LocalServerClient
 ) : ViewModel() {
     private val _state = MutableStateFlow(HuggingFaceScreenState())
     val state: StateFlow<HuggingFaceScreenState> = _state.asStateFlow()
     
     private val _commandFlow = MutableSharedFlow<HuggingFaceScreenCommand>(extraBufferCapacity = 1)
     val commandFlow: SharedFlow<HuggingFaceScreenCommand> = _commandFlow.asSharedFlow()
+    
+    init {
+        loadMessageCounts()
+    }
+    
+    private fun loadMessageCounts() {
+        viewModelScope.launch {
+            println("[HuggingFaceVM] Загрузка счетчиков с сервера...")
+            val result = serverClient.getMessageCount()
+            
+            result.fold(
+                onSuccess = { response ->
+                    if (response.success && response.models != null) {
+                        println("[HuggingFaceVM] ✅ Счетчики загружены: ${response.models}")
+                        _state.update { 
+                            it.copy(modelCounts = response.models)
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    println("[HuggingFaceVM] ⚠️ Не удалось загрузить счетчики: ${error.message}")
+                    // Оставляем нулевые значения по умолчанию
+                }
+            )
+        }
+    }
+    
+    private fun updateMessageCount(modelName: String, count: Int) {
+        viewModelScope.launch {
+            println("[HuggingFaceVM] Обновление счетчика для $modelName: $count")
+            val result = serverClient.updateMessageCount(modelName, count)
+
+            result.fold(
+                onSuccess = {
+                    println("[HuggingFaceVM] ✅ Счетчик обновлен на сервере для $modelName")
+                    _state.update { 
+                        val updatedCounts = it.modelCounts.toMutableMap()
+                        updatedCounts[modelName] = count
+                        it.copy(modelCounts = updatedCounts)
+                    }
+                },
+                onFailure = { error ->
+                    println("[HuggingFaceVM] ⚠️ Не удалось обновить счетчик: ${error.message}")
+                    // Не блокируем отправку сообщения из-за ошибки счетчика
+                }
+            )
+        }
+    }
     
     fun intentToAction(intent: HuggingFaceScreenIntent) {
         when (intent) {
@@ -54,14 +104,20 @@ class HuggingFaceScreenViewModel(
             
             is HuggingFaceScreenIntent.ClearSthenoHistory -> {
                 _state.update { it.copy(sthenoMessages = emptyList()) }
+                // Обнуляем счетчик на сервере
+                updateMessageCount("L3-8B-Stheno", 0)
             }
             
             is HuggingFaceScreenIntent.ClearMiniMaxHistory -> {
                 _state.update { it.copy(miniMaxMessages = emptyList()) }
+                // Обнуляем счетчик на сервере
+                updateMessageCount("MiniMax-M2", 0)
             }
             
             is HuggingFaceScreenIntent.ClearQwen2History -> {
                 _state.update { it.copy(qwen2Messages = emptyList()) }
+                // Обнуляем счетчик на сервере
+                updateMessageCount("Qwen2.5-7B-Instruct", 0)
             }
             
             is HuggingFaceScreenIntent.Qwen2ThinkingModeChanged -> {
@@ -81,6 +137,7 @@ class HuggingFaceScreenViewModel(
         if (currentState.sthenoInput.isBlank()) return
         
         val userPrompt = currentState.sthenoInput
+        val modelName = "L3-8B-Stheno"
         
         // Добавляем сообщение пользователя
         _state.update { 
@@ -94,6 +151,11 @@ class HuggingFaceScreenViewModel(
                 isSthenoLoading = true
             )
         }
+        
+        // Увеличиваем счетчик для сообщения пользователя
+        val userMessageCount = (currentState.modelCounts[modelName] ?: 0) + 1
+        println("[HuggingFaceVM] Увеличение счетчика (сообщение пользователя) для $modelName: $userMessageCount")
+        updateMessageCount(modelName, userMessageCount)
         
         viewModelScope.launch {
             try {
@@ -112,6 +174,11 @@ class HuggingFaceScreenViewModel(
                                 )
                             )
                         }
+                        
+                        // Увеличиваем счетчик для ответа ассистента
+                        val assistantMessageCount = (_state.value.modelCounts[modelName] ?: 0) + 1
+                        println("[HuggingFaceVM] Увеличение счетчика (ответ ассистента) для $modelName: $assistantMessageCount")
+                        updateMessageCount(modelName, assistantMessageCount)
                     }
                     is HuggingFaceResult.Error -> {
                         _state.update { 
@@ -123,6 +190,11 @@ class HuggingFaceScreenViewModel(
                                 )
                             )
                         }
+                        
+                        // Увеличиваем счетчик даже для сообщения об ошибке
+                        val assistantMessageCount = (_state.value.modelCounts[modelName] ?: 0) + 1
+                        println("[HuggingFaceVM] Увеличение счетчика (ошибка) для $modelName: $assistantMessageCount")
+                        updateMessageCount(modelName, assistantMessageCount)
                     }
                 }
             } finally {
@@ -136,6 +208,7 @@ class HuggingFaceScreenViewModel(
         if (currentState.miniMaxInput.isBlank()) return
         
         val userPrompt = currentState.miniMaxInput
+        val modelName = "MiniMax-M2"
         
         // Добавляем сообщение пользователя
         _state.update { 
@@ -149,6 +222,11 @@ class HuggingFaceScreenViewModel(
                 isMiniMaxLoading = true
             )
         }
+        
+        // Увеличиваем счетчик для сообщения пользователя
+        val userMessageCount = (currentState.modelCounts[modelName] ?: 0) + 1
+        println("[HuggingFaceVM] Увеличение счетчика (сообщение пользователя) для $modelName: $userMessageCount")
+        updateMessageCount(modelName, userMessageCount)
         
         viewModelScope.launch {
             try {
@@ -167,6 +245,11 @@ class HuggingFaceScreenViewModel(
                                 )
                             )
                         }
+                        
+                        // Увеличиваем счетчик для ответа ассистента
+                        val assistantMessageCount = (_state.value.modelCounts[modelName] ?: 0) + 1
+                        println("[HuggingFaceVM] Увеличение счетчика (ответ ассистента) для $modelName: $assistantMessageCount")
+                        updateMessageCount(modelName, assistantMessageCount)
                     }
                     is HuggingFaceResult.Error -> {
                         _state.update { 
@@ -178,6 +261,11 @@ class HuggingFaceScreenViewModel(
                                 )
                             )
                         }
+                        
+                        // Увеличиваем счетчик даже для сообщения об ошибке
+                        val assistantMessageCount = (_state.value.modelCounts[modelName] ?: 0) + 1
+                        println("[HuggingFaceVM] Увеличение счетчика (ошибка) для $modelName: $assistantMessageCount")
+                        updateMessageCount(modelName, assistantMessageCount)
                     }
                 }
             } finally {
@@ -191,6 +279,7 @@ class HuggingFaceScreenViewModel(
         if (currentState.qwen2Input.isBlank()) return
         
         val userPrompt = currentState.qwen2Input
+        val modelName = "Qwen2.5-7B-Instruct"
         
         // Добавляем сообщение пользователя
         _state.update { 
@@ -204,6 +293,11 @@ class HuggingFaceScreenViewModel(
                 isQwen2Loading = true
             )
         }
+        
+        // Увеличиваем счетчик для сообщения пользователя
+        val userMessageCount = (currentState.modelCounts[modelName] ?: 0) + 1
+        println("[HuggingFaceVM] Увеличение счетчика (сообщение пользователя) для $modelName: $userMessageCount")
+        updateMessageCount(modelName, userMessageCount)
         
         viewModelScope.launch {
             try {
@@ -223,6 +317,11 @@ class HuggingFaceScreenViewModel(
                                 )
                             )
                         }
+                        
+                        // Увеличиваем счетчик для ответа ассистента
+                        val assistantMessageCount = (_state.value.modelCounts[modelName] ?: 0) + 1
+                        println("[HuggingFaceVM] Увеличение счетчика (ответ ассистента) для $modelName: $assistantMessageCount")
+                        updateMessageCount(modelName, assistantMessageCount)
                     }
                     is HuggingFaceResult.Error -> {
                         _state.update { 
@@ -234,6 +333,11 @@ class HuggingFaceScreenViewModel(
                                 )
                             )
                         }
+                        
+                        // Увеличиваем счетчик даже для сообщения об ошибке
+                        val assistantMessageCount = (_state.value.modelCounts[modelName] ?: 0) + 1
+                        println("[HuggingFaceVM] Увеличение счетчика (ошибка) для $modelName: $assistantMessageCount")
+                        updateMessageCount(modelName, assistantMessageCount)
                     }
                 }
             } finally {

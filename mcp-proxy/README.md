@@ -1,181 +1,334 @@
-# MCP Proxy Server
+# Local Server (MCP + YandexGPT)
 
-HTTP прокси-сервер для подключения Android приложения к MCP (Model Context Protocol) серверам.
+HTTP сервер, объединяющий:
+- **Main Server** - обработка запросов от Android приложения и взаимодействие с YandexGPT
+- **MCP Client** - посредник между Main Server и MCP Server  
+- **MCP Server** - управление инструментами и данными
 
-## Зачем нужен прокси?
+## 🚀 Быстрый старт
 
-MCP серверы используют stdio (стандартный ввод/вывод) для коммуникации, что невозможно напрямую использовать в Android приложении. Этот прокси-сервер:
-
-1. Подключается к реальному MCP серверу через stdio
-2. Предоставляет REST API для Android приложения
-3. Транслирует запросы между Android и MCP сервером
-
-## Установка
+### 1. Установка зависимостей
 
 ```bash
 cd mcp-proxy
 npm install
 ```
 
-## Запуск
+### 2. Настройка переменных окружения
+
+Создайте файл `.env` на основе шаблона:
 
 ```bash
-npm start
+cd mcp-proxy
+cp .env.example .env
 ```
 
-Сервер запустится на `http://localhost:3000`
+Откройте `.env` и вставьте **свои** ключи от YandexGPT:
 
-## Для Android эмулятора
+```bash
+nano .env  # или откройте в любом редакторе
+```
+
+Содержимое `.env`:
+```env
+YANDEX_API_KEY=ваш_реальный_ключ_здесь
+YANDEX_FOLDER_ID=ваш_реальный_folder_id_здесь
+PORT=3001
+```
+
+> 💡 **Как получить ключи:**
+> 1. Перейдите на https://console.cloud.yandex.ru/
+> 2. Создайте сервисный аккаунт
+> 3. Получите API ключ
+> 4. Скопируйте Folder ID из консоли
+>
+> 💡 Файл `.env` защищен `.gitignore` и **не попадет в репозиторий**
+
+### 3. Запуск сервера
+
+```bash
+# Обычный запуск (читает ключи из .env)
+npm run local
+
+# Запуск с автоперезагрузкой при изменениях
+npm run local:dev
+```
+
+Сервер запустится на `http://localhost:3001`
+
+> ✅ Ключи автоматически загружаются из `.env` файла
+> ✅ Не нужно запоминать длинные строки!
+
+---
+
+## 📡 API Endpoints
+
+### 1. POST /api/chat
+
+Отправить сообщение в чат (используется YandexGPT с MCP инструментами)
+
+**Request:**
+```json
+{
+  "message": "Сколько у меня сообщений?",
+  "history": [
+    { "role": "user", "text": "Привет" },
+    { "role": "assistant", "text": "Здравствуйте!" }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "У вас 5 сообщений",
+  "toolUsed": "get_message_count",
+  "toolResult": "Количество сообщений: 5"
+}
+```
+
+### 2. POST /api/message-count
+
+Обновить счетчик сообщений для модели
+
+**Request:**
+```json
+{
+  "modelName": "L3-8B-Stheno",
+  "count": 10
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "modelName": "L3-8B-Stheno",
+  "count": 10
+}
+```
+
+### 3. GET /api/message-count
+
+Получить текущее количество сообщений
+
+**Request:**
+```bash
+# Для всех моделей
+GET /api/message-count
+
+# Для конкретной модели
+GET /api/message-count?modelName=L3-8B-Stheno
+```
+
+**Response (все модели):**
+```json
+{
+  "success": true,
+  "models": {
+    "L3-8B-Stheno": 10,
+    "MiniMax-M2": 5,
+    "Qwen2.5-7B-Instruct": 3
+  }
+}
+```
+
+**Response (одна модель):**
+```json
+{
+  "success": true,
+  "modelName": "L3-8B-Stheno",
+  "count": 10
+}
+```
+
+### 4. GET /api/tools
+
+Получить список доступных MCP инструментов
+
+**Response:**
+```json
+{
+  "success": true,
+  "tools": [
+    {
+      "name": "get_message_count",
+      "description": "Получить текущее количество сообщений в чате с моделями",
+      "parameters": { ... }
+    },
+    {
+      "name": "get_available_models",
+      "description": "Получить список доступных моделей для общения",
+      "parameters": { ... }
+    }
+  ]
+}
+```
+
+### 5. GET /health
+
+Health check сервера
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "server": "localserver",
+  "architecture": {
+    "app": "Android App",
+    "server": "Main Server (Express + YandexGPT)",
+    "mcpClient": "MCP Client",
+    "mcpServer": "MCP Server (Tools)"
+  },
+  "timestamp": "2025-11-18T14:00:00.000Z"
+}
+```
+
+---
+
+## 🔧 MCP Инструменты
+
+### get_message_count
+
+Получить текущее количество сообщений в чате с моделями
+
+**Параметры:**
+- `model_name` (string, optional) - название модели
+
+**Пример использования через YandexGPT:**
+- "Сколько у меня сообщений?"
+- "Сколько сообщений с моделью L3-8B-Stheno?"
+
+### get_available_models
+
+Получить список доступных моделей для общения
+
+**Параметры:** нет
+
+**Пример использования через YandexGPT:**
+- "Какие у меня модели?"
+- "Какая первая модель?"
+
+---
+
+## 🏗️ Архитектура
+
+```
+┌────────────────────────────────────┐
+│        Android App                 │
+│  • HuggingFace чат (3 модели)     │
+│  • Server Chat (MCP)               │
+└───────────────┬────────────────────┘
+                │ HTTP API
+                │
+┌───────────────▼────────────────────┐
+│        Main Server                 │
+│  • Обработка запросов от App       │
+│  • Взаимодействие с YandexGPT      │
+│  • Управление инструментами через  │
+│    MCP Client                      │
+└───────────────┬────────────────────┘
+                │ MCP Protocol
+                │
+┌───────────────▼────────────────────┐
+│        MCP Client                  │
+│  • Посредник между Server и MCP    │
+│    Server                          │
+└───────────────┬────────────────────┘
+                │ Internal API
+                │
+┌───────────────▼────────────────────┐
+│        MCP Server                  │
+│  • Управление инструментами        │
+│  • Хранение данных (count.json)    │
+│  • Реализация инструментов:        │
+│    - get_message_count             │
+│    - get_available_models          │
+└────────────────────────────────────┘
+```
+
+---
+
+## 💾 Данные
+
+Счетчики сообщений хранятся в файле `count.json`:
+
+```json
+{
+  "models": {
+    "L3-8B-Stheno": 10,
+    "MiniMax-M2": 5,
+    "Qwen2.5-7B-Instruct": 3
+  }
+}
+```
+
+---
+
+## 📱 Для Android эмулятора
 
 Android эмулятор не может подключиться к `localhost` на хост-машине напрямую. Используйте специальный IP:
 
 - **`10.0.2.2`** - для Android эмулятора (это адрес хост-машины)
 - **`localhost`** или **`127.0.0.1`** - для реального устройства в одной сети
 
-В коде Android приложения уже настроен адрес `http://10.0.2.2:3000` для эмулятора.
+В коде Android приложения уже настроен адрес `http://10.0.2.2:3001` для эмулятора.
 
-## API Endpoints
+---
 
-### 1. Подключение к MCP серверу
-
-```http
-POST /connect
-Content-Type: application/json
-
-{
-  "serverName": "filesystem"
-}
-```
-
-Доступные серверы:
-- `filesystem` - Доступ к файловой системе
-- `memory` - Сервер памяти
-- `everything` - Поиск файлов (для Windows)
-
-Ответ:
-```json
-{
-  "success": true,
-  "message": "Connected to filesystem MCP server"
-}
-```
-
-### 2. Получение списка инструментов
-
-```http
-GET /tools
-```
-
-Ответ:
-```json
-{
-  "tools": [
-    {
-      "name": "read_file",
-      "description": "Read the complete contents of a file",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "Path to the file to read"
-          }
-        },
-        "required": ["path"]
-      }
-    }
-  ]
-}
-```
-
-### 3. Вызов инструмента
-
-```http
-POST /tools/read_file
-Content-Type: application/json
-
-{
-  "arguments": {
-    "path": "/path/to/file.txt"
-  }
-}
-```
-
-### 4. Отключение
-
-```http
-POST /disconnect
-```
-
-### 5. Health Check
-
-```http
-GET /health
-```
-
-## Примеры использования
-
-### С помощью curl
+## 🧪 Тестирование
 
 ```bash
-# 1. Подключиться к filesystem MCP серверу
-curl -X POST http://localhost:3000/connect \
+# Health check
+curl http://localhost:3001/health
+
+# Получить счетчики всех моделей
+curl http://localhost:3001/api/message-count
+
+# Получить счетчик одной модели
+curl "http://localhost:3001/api/message-count?modelName=L3-8B-Stheno"
+
+# Обновить счетчик
+curl -X POST http://localhost:3001/api/message-count \
   -H "Content-Type: application/json" \
-  -d '{"serverName": "filesystem"}'
+  -d '{"modelName": "L3-8B-Stheno", "count": 15}'
 
-# 2. Получить список инструментов
-curl http://localhost:3000/tools
+# Получить список инструментов
+curl http://localhost:3001/api/tools
 
-# 3. Вызвать инструмент
-curl -X POST http://localhost:3000/tools/list_directory \
+# Отправить сообщение в чат
+curl -X POST http://localhost:3001/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"arguments": {"path": "."}}'
-
-# 4. Отключиться
-curl -X POST http://localhost:3000/disconnect
+  -d '{"message": "Сколько у меня сообщений?"}'
 ```
 
-### Из Android приложения
+---
 
-Android приложение уже настроено для работы с прокси:
-
-1. Запустите прокси-сервер: `npm start`
-2. Запустите Android приложение
-3. На главном экране нажмите "MCP Connection"
-4. Нажмите кнопку "Подключиться"
-5. После успешного подключения увидите список доступных инструментов
-
-## Поддерживаемые MCP серверы
-
-Вы можете добавить поддержку любого MCP сервера, изменив switch в `server.js`:
-
-```javascript
-case 'your-server':
-    command = 'node';
-    args = ['path/to/your/mcp-server.js'];
-    break;
-```
-
-## Логи
-
-Сервер выводит подробные логи всех операций:
-
-```
-[MCP Proxy] Server is running on http://0.0.0.0:3000
-[MCP Proxy] Connecting to MCP server: filesystem
-[MCP Proxy] Successfully connected to MCP server
-[MCP Proxy] Requesting tools list...
-[MCP Proxy] Received 5 tools
-```
-
-## Требования
+## 📋 Требования
 
 - Node.js >= 18.0.0
 - npm или yarn
+- YandexGPT API ключи
 
-## Зависимости
+## 📦 Зависимости
 
-- `@modelcontextprotocol/sdk` - Официальный SDK для MCP
 - `express` - Web framework
 - `cors` - CORS middleware для кросс-доменных запросов
+- `dotenv` - Загрузка переменных окружения из `.env` файла
 
+---
+
+## ⚠️ Важно
+
+- **Не коммитьте файл `.env` с реальными ключами в git!**
+- Файл `.env` уже добавлен в `.gitignore`
+- Используйте `.env.example` как шаблон для настройки
+
+---
+
+## 🔒 Безопасность
+
+- API ключи YandexGPT хранятся только в переменных окружения
+- Нет хардкода секретов в коде
+- Сервер принимает запросы только от разрешенных источников (настроено через CORS)

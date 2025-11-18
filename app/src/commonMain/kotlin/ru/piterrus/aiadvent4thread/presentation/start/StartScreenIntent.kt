@@ -7,5 +7,6 @@ sealed interface StartScreenIntent {
     object DiscussionSelected : StartScreenIntent
     object HuggingFaceSelected : StartScreenIntent
     object McpSelected : StartScreenIntent
+    object ServerChatSelected : StartScreenIntent
 }
 

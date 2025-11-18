@@ -39,6 +39,11 @@ class StartScreenViewModel : ViewModel() {
                     _commandFlow.emit(StartScreenCommand.NavigateToMcp)
                 }
             }
+            is StartScreenIntent.ServerChatSelected -> {
+                viewModelScope.launch {
+                    _commandFlow.emit(StartScreenCommand.NavigateToServerChat)
+                }
+            }
         }
     }
 }
