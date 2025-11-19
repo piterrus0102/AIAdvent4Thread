@@ -1,6 +1,6 @@
 {
   "models": {
-    "L3-8B-Stheno": 2,
+    "L3-8B-Stheno": 0,
     "MiniMax-M2": 0,
     "Qwen2.5-7B-Instruct": 0
   }

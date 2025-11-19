@@ -1,10 +1,14 @@
 package ru.piterrus.aiadvent4thread.presentation.serverchat
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -12,6 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,6 +31,18 @@ fun ServerChatScreen(
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val clipboardManager = LocalClipboardManager.current
+
+    // Показываем Snackbar
+    LaunchedEffect(state.snackbarMessage) {
+        state.snackbarMessage?.let { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short
+            )
+        }
+    }
 
     // Auto-scroll при новых сообщениях
     LaunchedEffect(state.shouldScrollToBottom) {
@@ -36,7 +54,18 @@ fun ServerChatScreen(
         }
     }
 
+    // Диалог авторизации GitHub
+    if (state.showGitHubAuthDialog) {
+        GitHubAuthDialog(
+            githubToken = state.githubToken,
+            onTokenChange = { onIntent(ServerChatScreenIntent.GitHubTokenChanged(it)) },
+            onConfirm = { onIntent(ServerChatScreenIntent.GitHubAuthConfirmed) },
+            onDismiss = { onIntent(ServerChatScreenIntent.GitHubAuthDialogDismissed) }
+        )
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -72,7 +101,43 @@ fun ServerChatScreen(
                     }
                 },
                 actions = {
-                    // Пустой action (можно добавить кнопку проверки подключения)
+                    Row(
+                        modifier = Modifier.padding(end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Кнопка очистки чата
+                        IconButton(
+                            onClick = { onIntent(ServerChatScreenIntent.ClearChatClicked) },
+                            enabled = state.isConnected && !state.isLoading
+                        ) {
+                            Text(
+                                text = "🗑",
+                                fontSize = 20.sp,
+                                color = Color.White
+                            )
+                        }
+                        
+                        // Тумблер GitHub MCP
+                        Text(
+                            text = "GitHub",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Switch(
+                            checked = state.useGitHubMCP,
+                            onCheckedChange = { enabled ->
+                                onIntent(ServerChatScreenIntent.GitHubToggleChanged(enabled))
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF4CAF50),
+                                checkedTrackColor = Color(0xFF81C784),
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color.White.copy(alpha = 0.5f)
+                            )
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF1976D2)
@@ -145,17 +210,10 @@ fun ServerChatScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "MCP-чат с сервером",
+                                text = "MCP-чат",
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Этот чат работает через локальный сервер\nс полноценной MCP-архитектурой:",
-                                fontSize = 14.sp,
-                                color = Color.White.copy(alpha = 0.9f),
-                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Surface(
@@ -187,13 +245,6 @@ fun ServerChatScreen(
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "💡 Спросите о количестве сообщений!",
-                                fontSize = 13.sp,
-                                color = Color(0xFFFFEB3B),
-                                fontWeight = FontWeight.Medium
-                            )
                         }
                     } else {
                         LazyColumn(
@@ -203,7 +254,13 @@ fun ServerChatScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(state.messages) { message ->
-                                MessageBubble(message = message)
+                                MessageBubble(
+                                    message = message,
+                                    onLongClick = { text ->
+                                        clipboardManager.setText(AnnotatedString(text))
+                                        onIntent(ServerChatScreenIntent.CopyMessageToClipboard(text))
+                                    }
+                                )
                             }
                         }
                     }
@@ -293,7 +350,72 @@ fun ServerChatScreen(
 }
 
 @Composable
-private fun MessageBubble(message: ServerChatMessage) {
+private fun GitHubAuthDialog(
+    githubToken: String,
+    onTokenChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "GitHub Token",
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Введите GitHub Personal Access Token",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+                
+                OutlinedTextField(
+                    value = githubToken,
+                    onValueChange = onTokenChange,
+                    label = { Text("GitHub Token") },
+                    placeholder = { Text("ghp_xxxxxxxxxxxx...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                
+                Text(
+                    text = "💡 Создайте токен: github.com/settings/tokens\nНужны права: repo, read:org",
+                    fontSize = 12.sp,
+                    color = Color(0xFF2196F3),
+                    lineHeight = 16.sp
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = githubToken.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1976D2)
+                )
+            ) {
+                Text("Подключить")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MessageBubble(
+    message: ServerChatMessage,
+    onLongClick: (String) -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
@@ -307,7 +429,12 @@ private fun MessageBubble(message: ServerChatMessage) {
             ),
             color = if (message.isUser) Color(0xFF1976D2) else Color.White,
             shadowElevation = 2.dp,
-            modifier = Modifier.widthIn(max = 280.dp)
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .combinedClickable(
+                    onClick = { },
+                    onLongClick = { onLongClick(message.text) }
+                )
         ) {
             Column(
                 modifier = Modifier.padding(12.dp)
