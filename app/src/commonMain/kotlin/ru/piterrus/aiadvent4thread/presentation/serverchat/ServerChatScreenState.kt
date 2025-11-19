@@ -14,6 +14,10 @@ data class ServerChatScreenState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isConnected: Boolean = false,
-    val shouldScrollToBottom: Boolean = false
+    val shouldScrollToBottom: Boolean = false,
+    val useGitHubMCP: Boolean = false,
+    val showGitHubAuthDialog: Boolean = false,
+    val githubToken: String = "",
+    val snackbarMessage: String? = null
 )
 
