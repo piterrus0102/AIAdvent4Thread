@@ -9,19 +9,10 @@ import {
     createRetryMessage
 } from './ServerPrompts.js';
 import ReminderManager from './ReminderManager.js';
+import HuggingFaceClient from './HuggingFaceClient.js';
 
 // Загружаем переменные окружения
 dotenv.config();
-
-// YandexGPT credentials
-const YANDEX_API_KEY = process.env.YANDEX_API_KEY;
-const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID;
-
-if (!YANDEX_API_KEY || !YANDEX_FOLDER_ID) {
-    console.error('❌ Не заданы YANDEX_API_KEY или YANDEX_FOLDER_ID');
-    console.error('Создайте файл .env в папке mcp-proxy');
-    process.exit(1);
-}
 
 // =============================================================================
 // MainServer - Главный сервер (Orchestrator)
@@ -47,6 +38,9 @@ class MainServer {
         // Режим работы MCP (локальный или GitHub)
         this.useGitHubMCP = false;
         this.githubCredentials = null;
+        
+        // HuggingFace клиент (Qwen2.5-7B-Instruct)
+        this.huggingFaceClient = new HuggingFaceClient();
         
         // Планировщик напоминаний
         this.reminderManager = new ReminderManager(this);
@@ -87,8 +81,8 @@ class MainServer {
      * @returns {Promise<Array>} - Список инструментов в формате YandexGPT
      */
     async getToolsForLLM() {
-        // console.log('[Server] Получение инструментов...');
-        // console.log(`[Server] Режим: ${this.useGitHubMCP ? 'GitHub' : 'Локальный'}`);
+        console.log('[Server] Получение инструментов...');
+        console.log(`[Server] Режим: ${this.useGitHubMCP ? 'GitHub' : 'Локальный'}`);
         
         const activeMCPClient = this.getActiveMCPClient();
         
@@ -103,7 +97,7 @@ class MainServer {
         
         // Получаем инструменты от активного MCP клиента
         const toolsResponse = await activeMCPClient.listTools();
-        // console.log(`[Server] Получено инструментов: ${toolsResponse.tools.length}`);
+        console.log(`[Server] Получено инструментов: ${toolsResponse.tools.length}`);
         
         // Преобразуем формат MCP в формат YandexGPT
         return toolsResponse.tools.map(tool => ({
@@ -136,70 +130,42 @@ class MainServer {
      * 1. Отправляет запрос в YandexGPT
      * 2. Если LLM хочет вызвать инструмент - вызывает его
      * 3. Передает результат обратно в LLM
-     * 4. Повторяет до получения финального ответа (до MAX_TOOL_CALLS раз)
-     * 
+     *
      * @param {Array} messages - История сообщений
      * @param {Array} tools - Доступные инструменты
      * @param {Object} customSystemMessage - Опциональный кастомный system message
      * @returns {Promise<{text, toolUsed, toolResult}>} - Ответ LLM
      */
     async callLLM(messages, tools, customSystemMessage = null) {
-        // console.log('[Server] Вызов YandexGPT');
-        // console.log(`[Server] Сообщений в истории: ${messages.length}`);
-        // console.log(`[Server] Инструментов: ${tools.map(t => t.name).join(', ')}`);
+        console.log('[Server] Вызов HuggingFace (Qwen2.5-7B-Instruct)');
+        console.log(`[Server] Сообщений в истории: ${messages.length}`);
+        console.log(`[Server] Инструментов: ${tools.map(t => t.name).join(', ')}`);
 
         // Создаем system message с инструкциями для LLM
         const systemMessage = customSystemMessage || createSystemMessage(tools);
 
-        const requestBody = {
-            modelUri: `gpt://${YANDEX_FOLDER_ID}/yandexgpt/latest`,
-            completionOptions: {
-                stream: false,
-                temperature: 0.6,
-                maxTokens: 2000
-            },
-            messages: [systemMessage, ...messages]
-        };
-
         try {
-            // Первый запрос к YandexGPT
-            const response = await fetch('https://llm.api.cloud.yandex.net/foundationModels/v1/completion', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Api-Key ${YANDEX_API_KEY}`,
-                    'x-folder-id': YANDEX_FOLDER_ID
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('[Server] Ошибка YandexGPT:', response.status, errorText);
-                throw new Error(`YandexGPT API error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            let currentMessage = data.result.alternatives[0].message.text;
+            // Первый запрос к HuggingFace
+            const allMessages = [systemMessage, ...messages];
+            let currentMessage = await this.huggingFaceClient.callModel(allMessages, 0.3, 2000);
             
-            // console.log('[Server] ============================================');
-            // console.log('[Server] Ответ YandexGPT получен:');
-            // console.log('[Server]', currentMessage);
-            // console.log('[Server] ============================================');
-            // console.log(`[Server] Содержит USE_TOOL?: ${currentMessage.includes('USE_TOOL:')}`);
+            console.log('[Server] ============================================');
+            console.log('[Server] Ответ YandexGPT получен:');
+            console.log('[Server]', currentMessage);
+            console.log('[Server] ============================================');
+            console.log(`[Server] Содержит USE_TOOL?: ${currentMessage.includes('USE_TOOL:')}`);
 
             // ===== TOOL CHAINING: Цикл вызовов инструментов =====
-            const MAX_TOOL_CALLS = 10;  // Максимальное количество вызовов инструментов
             let toolCallCount = 0;
             let conversationHistory = [...messages];
             const usedTools = [];
             
-            // console.log('[Server] Начинаем цикл обработки инструментов...');
+            console.log('[Server] Начинаем цикл обработки инструментов...');
             
-            while (currentMessage.includes('USE_TOOL:') && toolCallCount < MAX_TOOL_CALLS) {
+            while (currentMessage.includes('USE_TOOL:')) {
                 toolCallCount++;
-                // console.log(`\n[Server] === Вызов инструмента #${toolCallCount} ===`);
-                // console.log(`[Server] Сообщение содержит: ${currentMessage.substring(0, 200)}`);
+                console.log(`\n[Server] === Вызов инструмента #${toolCallCount} ===`);
+                console.log(`[Server] Сообщение содержит: ${currentMessage.substring(0, 200)}`);
                 
                 let toolName, toolArgs = {};
                 
@@ -207,7 +173,7 @@ class MainServer {
                 // Ищем начало JSON после USE_TOOL:
                 const useToolIndex = currentMessage.indexOf('USE_TOOL:');
                 if (useToolIndex === -1) {
-                    // console.log('[Server] USE_TOOL: не найден в сообщении');
+                    console.log('[Server] USE_TOOL: не найден в сообщении');
                     break;
                 }
                 
@@ -233,22 +199,22 @@ class MainServer {
                     if (jsonEndIndex !== -1) {
                         try {
                             const jsonStr = afterUseTool.substring(jsonStartIndex, jsonEndIndex);
-                            // console.log(`[Server] JSON строка: ${jsonStr}`);
+                            console.log(`[Server] JSON строка: ${jsonStr}`);
                             const toolCall = JSON.parse(jsonStr);
                             toolName = toolCall.name;
                             toolArgs = toolCall.args || {};
                             
-                            // console.log(`[Server] ✓ LLM запросила: ${toolName}`);
-                            // console.log(`[Server] ✓ Аргументы:`, JSON.stringify(toolArgs));
+                            console.log(`[Server] ✓ LLM запросила: ${toolName}`);
+                            console.log(`[Server] ✓ Аргументы:`, JSON.stringify(toolArgs));
                         } catch (parseError) {
                             console.error('[Server] ❌ Ошибка парсинга JSON:', parseError.message);
-                            // console.error('[Server] JSON строка была:', afterUseTool.substring(jsonStartIndex, jsonEndIndex));
+                            console.error('[Server] JSON строка была:', afterUseTool.substring(jsonStartIndex, jsonEndIndex));
                         }
                     }
                 }
                 
                 if (!toolName) {
-                    // console.log('[Server] ⚠️ Не удалось извлечь имя инструмента, прерываем цикл');
+                    console.log('[Server] ⚠️ Не удалось извлечь имя инструмента, прерываем цикл');
                     break;
                 }
                 
@@ -267,21 +233,8 @@ class MainServer {
                     });
                     
                     // Повторный запрос к LLM
-                    const retryResponse = await fetch('https://llm.api.cloud.yandex.net/foundationModels/v1/completion', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Api-Key ${YANDEX_API_KEY}`,
-                            'x-folder-id': YANDEX_FOLDER_ID
-                        },
-                        body: JSON.stringify({
-                            ...requestBody,
-                            messages: [systemMessage, ...conversationHistory]
-                        })
-                    });
-                    
-                    const retryData = await retryResponse.json();
-                    currentMessage = retryData.result.alternatives[0].message.text;
+                    const retryMessages = [systemMessage, ...conversationHistory];
+                    currentMessage = await this.huggingFaceClient.callModel(retryMessages, 0.3, 2000);
                     continue;
                 }
                 
@@ -293,7 +246,7 @@ class MainServer {
                     const toolResult = await activeMCPClient.callTool(toolName, toolArgs);
                     toolResultText = toolResult.content[0].text;
                     
-                    // console.log('[Server] ✅ Результат:', toolResultText.substring(0, 200));
+                    console.log('[Server] ✅ Результат:', toolResultText.substring(0, 200));
                     usedTools.push({ name: toolName, args: toolArgs, result: toolResultText });
                 } catch (toolError) {
                     const errorMessage = toolError.message || String(toolError);
@@ -310,36 +263,20 @@ class MainServer {
                     text: createToolResultMessage(toolName, toolResultText)
                 });
                 
-                const followUpResponse = await fetch('https://llm.api.cloud.yandex.net/foundationModels/v1/completion', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Api-Key ${YANDEX_API_KEY}`,
-                        'x-folder-id': YANDEX_FOLDER_ID
-                    },
-                    body: JSON.stringify({
-                        ...requestBody,
-                        messages: [systemMessage, ...conversationHistory]
-                    })
-                });
+                const followUpMessages = [systemMessage, ...conversationHistory];
+                currentMessage = await this.huggingFaceClient.callModel(followUpMessages, 0.3, 2000);
                 
-                const followUpData = await followUpResponse.json();
-                currentMessage = followUpData.result.alternatives[0].message.text;
-                
-                // console.log('[Server] ============================================');
-                // console.log('[Server] Следующий ответ YandexGPT:');
-                // console.log('[Server]', currentMessage);
-                // console.log('[Server] ============================================');
-                // console.log(`[Server] Содержит USE_TOOL?: ${currentMessage.includes('USE_TOOL:')}`);
+                console.log('[Server] ============================================');
+                console.log('[Server] Следующий ответ YandexGPT:');
+                console.log('[Server]', currentMessage);
+                console.log('[Server] ============================================');
+                console.log(`[Server] Содержит USE_TOOL?: ${currentMessage.includes('USE_TOOL:')}`);
             }
             
-            // console.log('[Server] Цикл обработки инструментов завершен');
-            // console.log(`[Server] Всего вызовов: ${toolCallCount}`);
-            // console.log(`[Server] Использовано инструментов: ${usedTools.length}`);
-            
-            if (toolCallCount >= MAX_TOOL_CALLS) {
-                console.log(`[Server] ⚠️ Достигнут лимит вызовов (${MAX_TOOL_CALLS})`);
-            }
+            console.log('[Server] Цикл обработки инструментов завершен');
+            console.log(`[Server] Всего вызовов: ${toolCallCount}`);
+            console.log(`[Server] Использовано инструментов: ${usedTools.length}`);
+
             
             // ===== ОЧИСТКА ФИНАЛЬНОГО ОТВЕТА =====
             // Убираем любые остатки USE_TOOL команд из финального ответа
@@ -387,8 +324,8 @@ class MainServer {
             
             // Возвращаем результат
             if (usedTools.length > 0) {
-                // console.log(`[Server] ✅ Цепочка из ${usedTools.length} инструментов выполнена`);
-                // console.log(`[Server] Финальный ответ: ${cleanedMessage.substring(0, 100)}...`);
+                console.log(`[Server] ✅ Цепочка из ${usedTools.length} инструментов выполнена`);
+                console.log(`[Server] Финальный ответ: ${cleanedMessage.substring(0, 100)}...`);
                 
                 return {
                     text: cleanedMessage,
@@ -397,8 +334,8 @@ class MainServer {
                 };
             }
             
-            // console.log('[Server] Прямой ответ без инструментов');
-            // console.log(`[Server] Ответ: ${cleanedMessage.substring(0, 100)}...`);
+            console.log('[Server] Прямой ответ без инструментов');
+            console.log(`[Server] Ответ: ${cleanedMessage.substring(0, 100)}...`);
             
             return {
                 text: cleanedMessage,

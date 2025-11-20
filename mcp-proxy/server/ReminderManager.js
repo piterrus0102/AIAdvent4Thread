@@ -8,6 +8,8 @@
 // - Остановка напоминаний
 // =============================================================================
 
+import HuggingFaceClient from './HuggingFaceClient.js';
+
 class ReminderManager {
     constructor(mainServer) {
         this.mainServer = mainServer;
@@ -17,6 +19,9 @@ class ReminderManager {
         
         // Счетчик для ID
         this.nextId = 1;
+        
+        // HuggingFace клиент
+        this.huggingFaceClient = new HuggingFaceClient();
         
         console.log('[ReminderManager] Инициализирован');
     }
@@ -100,9 +105,7 @@ class ReminderManager {
     async parseReminderRequest(userRequest) {
         console.log('[ReminderManager] Парсинг запроса через LLM...');
         
-        const systemMessage = {
-            role: 'system',
-            text: `Ты - парсер запросов на создание напоминаний. Извлеки из запроса пользователя:
+        const systemPrompt = `Ты - парсер запросов на создание напоминаний. Извлеки из запроса пользователя:
 1. Интервал времени в СЕКУНДАХ (преобразуй минуты/часы в секунды)
 2. Тему напоминания (о чем напоминать)
 3. Репозиторий (если указан)
@@ -126,38 +129,14 @@ class ReminderManager {
 Запрос: "проверяй каждые 30 секунд issues в репозитории про челлендж ИИ"
 Ответ: {"interval": 30, "topic": "issues в AIAdvent4Thread", "query": "Сколько открытых issues в репозитории piterrus0102/AIAdvent4Thread?", "owner": "piterrus0102", "repo": "AIAdvent4Thread"}
 
-ВАЖНО: возвращай только JSON, без комментариев!`
-        };
+ВАЖНО: возвращай только JSON, без комментариев!`;
 
-        const requestBody = {
-            modelUri: `gpt://${process.env.YANDEX_FOLDER_ID}/yandexgpt/latest`,
-            completionOptions: {
-                stream: false,
-                temperature: 0.3,
-                maxTokens: 500
-            },
-            messages: [
-                systemMessage,
-                { role: 'user', text: userRequest }
-            ]
-        };
-
-        const response = await fetch('https://llm.api.cloud.yandex.net/foundationModels/v1/completion', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Api-Key ${process.env.YANDEX_API_KEY}`,
-                'x-folder-id': process.env.YANDEX_FOLDER_ID
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-            throw new Error(`YandexGPT API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const llmResponse = data.result.alternatives[0].message.text.trim();
+        const llmResponse = await this.huggingFaceClient.callWithPrompt(
+            systemPrompt,
+            userRequest,
+            0.3,
+            500
+        );
         
         console.log('[ReminderManager] Ответ LLM:', llmResponse);
         
@@ -227,7 +206,7 @@ class ReminderManager {
      * @returns {Promise<{message: string, toolUsed: string|null}>}
      */
     async executeStructuredQuery(query) {
-        // console.log('[ReminderManager] Выполнение структурированного запроса...');
+        console.log('[ReminderManager] Выполнение структурированного запроса...');
         
         // Получаем инструменты от активного MCP
         const tools = await this.mainServer.getToolsForLLM();
@@ -248,8 +227,23 @@ class ReminderManager {
      */
     createStructuredSystemMessage(tools) {
         const toolsDescription = tools
-            .map(tool => `- ${tool.name}: ${tool.description}`)
-            .join('\n');
+            .map(tool => {
+                let desc = `- ${tool.name}: ${tool.description}`;
+                
+                // Добавляем информацию о параметрах
+                if (tool.parameters && tool.parameters.properties) {
+                    const params = Object.entries(tool.parameters.properties)
+                        .map(([key, value]) => {
+                            const required = tool.parameters.required?.includes(key) ? ' (обязательный)' : ' (опциональный)';
+                            return `  ${key}${required}: ${value.description || value.type}`;
+                        })
+                        .join('\n');
+                    desc += `\n  Параметры:\n${params}`;
+                }
+                
+                return desc;
+            })
+            .join('\n\n');
 
         return {
             role: 'system',
@@ -302,6 +296,8 @@ USE_TOOL: {"name": "list_pull_requests", "args": {"owner": "piterrus0102", "repo
 ВАЖНО:
 - ВСЕГДА используй инструменты для получения актуальных данных
 - ВСЕГДА указывай owner: "piterrus0102" в аргументах
+- Используй ТОЧНЫЕ названия параметров из списка выше!
+- Например: search_repositories требует "query" (НЕ "q"!)
 - ВСЕГДА начинай ответ с "📊 Количество:"
 - ВСЕГДА добавляй "📋 Summary:"
 - Summary = СУММАРИЗАЦИЯ, а не список:

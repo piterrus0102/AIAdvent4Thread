@@ -20,11 +20,11 @@
 //  └────┬─────────────┬─────────────┬────────────────┬──────────────┘
 //       │             │             │                │
 //  ┌────▼──────┐ ┌───▼────────┐ ┌──▼──────────┐ ┌──▼─────────────┐
-//  │ MCPClient │ │ GitHubMCP  │ │ AppDatabase │ │   YandexGPT    │
-//  │           │ │   Client   │ │             │ │   (External)   │
-//  └────┬──────┘ └────┬───────┘ └─────────────┘ └────────────────┘
-//       │             │
-//  ┌────▼──────┐ ┌───▼───────────┐
+//  │ MCPClient │ │ GitHubMCP  │ │ AppDatabase │ │  HuggingFace   │
+//  │           │ │   Client   │ │             │ │ Qwen2.5-7B-    │
+//  └────┬──────┘ └────┬───────┘ └─────────────┘ │  Instruct      │
+//       │             │                          │  (External)    │
+//  ┌────▼──────┐ ┌───▼───────────┐              └────────────────┘
 //  │ MCPServer │ │ github-mcp-   │
 //  │ (Local)   │ │ server (Go)   │
 //  └───────────┘ └───────────────┘
@@ -74,7 +74,7 @@ console.log('[App] ✅ Все компоненты инициализирова�
 
 /**
  * POST /api/chat
- * Отправить сообщение в чат (используется YandexGPT + MCP)
+ * Отправить сообщение в чат (используется HuggingFace Qwen2.5-7B-Instruct + MCP)
  * 
  * Аналог: @POST("/api/chat") suspend fun chat(@Body request: ChatRequest)
  */
@@ -439,7 +439,7 @@ app.get('/health', (req, res) => {
             server: 'MainServer (Orchestrator)',
             mcp: 'Local MCP + GitHub MCP',
             database: 'SQLite',
-            llm: 'YandexGPT'
+            llm: 'HuggingFace Qwen2.5-7B-Instruct'
         },
         timestamp: new Date().toISOString()
     });
@@ -533,7 +533,7 @@ app.get('/api/reminders', async (req, res) => {
 // =============================================================================
 // Аналог: onCreate() / onDestroy() в Android
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('\n========================================================================================================');
     console.log(`🚀 AIAdvent4Thread MCP Proxy Server запущен на http://0.0.0.0:${PORT}`);
     console.log('========================================================================================================');
@@ -546,7 +546,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('     ├─→ 🔧 MCPClient → MCPServer (Локальные инструменты)');
     console.log('     ├─→ 🐙 GitHubMCPClient → github-mcp-server (Go binary)');
     console.log('     ├─→ 💾 AppDatabase (SQLite)');
-    console.log('     └─→ 🤖 YandexGPT (LLM)');
+    console.log('     └─→ 🤖 HuggingFace Qwen2.5-7B-Instruct (LLM)');
     console.log('\n📡 API Endpoints:');
     console.log(`  POST   /api/chat              - Отправить сообщение`);
     console.log(`  POST   /api/message-count     - Обновить счетчик`);
@@ -563,6 +563,16 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('\n💡 Для Android эмулятора используй: http://10.0.2.2:${PORT}');
     console.log('========================================================================================================\n');
 });
+
+// Устанавливаем таймаут для HTTP соединений (60 секунд)
+server.timeout = 60000; // 60 секунд
+server.keepAliveTimeout = 65000; // 65 секунд (чуть больше чем timeout)
+server.headersTimeout = 66000; // 66 секунд (чуть больше чем keepAliveTimeout)
+
+console.log('[Server] ⏱️ Таймауты установлены:');
+console.log(`  - Request timeout: ${server.timeout}ms (60s)`);
+console.log(`  - Keep-alive timeout: ${server.keepAliveTimeout}ms (65s)`);
+console.log(`  - Headers timeout: ${server.headersTimeout}ms (66s)`);
 
 // Graceful shutdown (аналог onDestroy в Android)
 process.on('SIGINT', async () => {
