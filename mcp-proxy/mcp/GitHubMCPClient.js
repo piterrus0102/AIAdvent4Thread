@@ -171,17 +171,17 @@ class GitHubMCPClient {
         }
 
         try {
-            // console.log('[GitHub MCP] 📋 Запрос списка инструментов...');
+            console.log('[GitHub MCP] 📋 Запрос списка инструментов...');
             
             // Вызываем MCP метод
             const response = await this.client.listTools();
             
-            // console.log(`[GitHub MCP] ✅ Получено инструментов: ${response.tools.length}`);
+            console.log(`[GitHub MCP] ✅ Получено инструментов: ${response.tools.length}`);
             
             // Логируем первые 5 для отладки
-            // response.tools.slice(0, 5).forEach(tool => {
-            //     console.log(`[GitHub MCP]   🔧 ${tool.name}: ${tool.description || 'No description'}`);
-            // });
+            response.tools.slice(0, 5).forEach(tool => {
+                console.log(`[GitHub MCP]   🔧 ${tool.name}: ${tool.description || 'No description'}`);
+            });
             
             return response;
             
@@ -210,8 +210,8 @@ class GitHubMCPClient {
         }
 
         try {
-            // console.log(`[GitHub MCP] 🔧 Вызов: ${toolName}`);
-            // console.log(`[GitHub MCP] 📝 Аргументы:`, JSON.stringify(args, null, 2));
+            console.log(`[GitHub MCP] 🔧 Вызов: ${toolName}`);
+            console.log(`[GitHub MCP] 📝 Аргументы:`, JSON.stringify(args, null, 2));
             
             // Выполняем вызов
             const response = await this.client.callTool({
@@ -219,7 +219,7 @@ class GitHubMCPClient {
                 arguments: args
             });
             
-            // console.log(`[GitHub MCP] ✅ Результат получен от ${toolName}`);
+            console.log(`[GitHub MCP] ✅ Результат получен от ${toolName}`);
             return response;
             
         } catch (error) {

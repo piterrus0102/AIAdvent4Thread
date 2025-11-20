@@ -1,6 +1,7 @@
 package ru.piterrus.aiadvent4thread.di
 
 import io.ktor.client.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.serialization.kotlinx.json.*
@@ -60,6 +61,11 @@ val appModule = module {
             install(Logging) {
                 logger = Logger.DEFAULT
                 level = LogLevel.INFO
+            }
+            install(HttpTimeout) {
+                requestTimeoutMillis = 60_000  // 60 секунд
+                connectTimeoutMillis = 30_000  // 30 секунд
+                socketTimeoutMillis = 60_000   // 60 секунд
             }
         }
         

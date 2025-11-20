@@ -1,7 +1,7 @@
-# Local Server (MCP + YandexGPT)
+# Local Server (MCP + HuggingFace)
 
 HTTP сервер, объединяющий:
-- **Main Server** - обработка запросов от Android приложения и взаимодействие с YandexGPT
+- **Main Server** - обработка запросов от Android приложения и взаимодействие с HuggingFace (Qwen2.5-7B-Instruct)
 - **MCP Client** - посредник между Main Server и MCP Server  
 - **MCP Server** - управление инструментами и данными
 
@@ -16,31 +16,23 @@ npm install
 
 ### 2. Настройка переменных окружения
 
-Создайте файл `.env` на основе шаблона:
+Создайте файл `.env` в папке mcp-proxy:
 
 ```bash
 cd mcp-proxy
-cp .env.example .env
-```
-
-Откройте `.env` и вставьте **свои** ключи от YandexGPT:
-
-```bash
 nano .env  # или откройте в любом редакторе
 ```
 
 Содержимое `.env`:
 ```env
-YANDEX_API_KEY=ваш_реальный_ключ_здесь
-YANDEX_FOLDER_ID=ваш_реальный_folder_id_здесь
+HUGGINGFACE_API_KEY=ваш_huggingface_api_key_здесь
 PORT=3001
 ```
 
-> 💡 **Как получить ключи:**
-> 1. Перейдите на https://console.cloud.yandex.ru/
-> 2. Создайте сервисный аккаунт
-> 3. Получите API ключ
-> 4. Скопируйте Folder ID из консоли
+> 💡 **Как получить HuggingFace API ключ:**
+> 1. Перейдите на https://huggingface.co/settings/tokens
+> 2. Создайте новый токен (Read access достаточно)
+> 3. Скопируйте токен в `.env` файл
 >
 > 💡 Файл `.env` защищен `.gitignore` и **не попадет в репозиторий**
 
@@ -65,7 +57,7 @@ npm run local:dev
 
 ### 1. POST /api/chat
 
-Отправить сообщение в чат (используется YandexGPT с MCP инструментами)
+Отправить сообщение в чат (используется HuggingFace Qwen2.5-7B-Instruct с MCP инструментами)
 
 **Request:**
 ```json
@@ -174,14 +166,16 @@ Health check сервера
 ```json
 {
   "status": "ok",
-  "server": "localserver",
+  "server": "AIAdvent4Thread MCP Proxy",
   "architecture": {
     "app": "Android App",
-    "server": "Main Server (Express + YandexGPT)",
-    "mcpClient": "MCP Client",
-    "mcpServer": "MCP Server (Tools)"
+    "api": "Express REST API",
+    "server": "MainServer (Orchestrator)",
+    "mcp": "Local MCP + GitHub MCP",
+    "database": "SQLite",
+    "llm": "HuggingFace Qwen2.5-7B-Instruct"
   },
-  "timestamp": "2025-11-18T14:00:00.000Z"
+  "timestamp": "2025-11-20T14:00:00.000Z"
 }
 ```
 
@@ -196,7 +190,7 @@ Health check сервера
 **Параметры:**
 - `model_name` (string, optional) - название модели
 
-**Пример использования через YandexGPT:**
+**Пример использования через HuggingFace LLM:**
 - "Сколько у меня сообщений?"
 - "Сколько сообщений с моделью L3-8B-Stheno?"
 
@@ -206,7 +200,7 @@ Health check сервера
 
 **Параметры:** нет
 
-**Пример использования через YandexGPT:**
+**Пример использования через HuggingFace LLM:**
 - "Какие у меня модели?"
 - "Какая первая модель?"
 
@@ -225,7 +219,8 @@ Health check сервера
 ┌───────────────▼────────────────────┐
 │        Main Server                 │
 │  • Обработка запросов от App       │
-│  • Взаимодействие с YandexGPT      │
+│  • Взаимодействие с HuggingFace    │
+│    (Qwen2.5-7B-Instruct)           │
 │  • Управление инструментами через  │
 │    MCP Client                      │
 └───────────────┬────────────────────┘
@@ -309,7 +304,7 @@ curl -X POST http://localhost:3001/api/chat \
 
 - Node.js >= 18.0.0
 - npm или yarn
-- YandexGPT API ключи
+- HuggingFace API ключ (бесплатный, получить на https://huggingface.co/settings/tokens)
 
 ## 📦 Зависимости
 
@@ -323,12 +318,12 @@ curl -X POST http://localhost:3001/api/chat \
 
 - **Не коммитьте файл `.env` с реальными ключами в git!**
 - Файл `.env` уже добавлен в `.gitignore`
-- Используйте `.env.example` как шаблон для настройки
+- Добавьте `HUGGINGFACE_API_KEY` в `.env` файл перед запуском
 
 ---
 
 ## 🔒 Безопасность
 
-- API ключи YandexGPT хранятся только в переменных окружения
+- API ключи HuggingFace хранятся только в переменных окружения
 - Нет хардкода секретов в коде
 - Сервер принимает запросы только от разрешенных источников (настроено через CORS)

@@ -7,9 +7,13 @@
 // =============================================================================
 
 import dotenv from 'dotenv';
+import HuggingFaceClient from './HuggingFaceClient.js';
 dotenv.config();
 
 class RequestClassifier {
+    constructor() {
+        this.huggingFaceClient = new HuggingFaceClient();
+    }
     /**
      * Классифицировать запрос пользователя
      * 
@@ -20,9 +24,7 @@ class RequestClassifier {
         console.log('[Classifier] 🔍 Классификация запроса...');
         console.log('[Classifier] Запрос:', userMessage);
         
-        const systemMessage = {
-            role: 'system',
-            text: `Ты - классификатор запросов. Определи тип запроса пользователя.
+        const systemPrompt = `Ты - классификатор запросов. Определи тип запроса пользователя.
 
 ТИПЫ ЗАПРОСОВ:
 
@@ -72,39 +74,15 @@ class RequestClassifier {
 Ответ: {"type": "reminder", "scheduleTime": 2, "scheduleUnit": "minutes", "queryString": "pull requests"}
 
 Запрос: "проверяй каждый час релизы в моих репозиториях"
-Ответ: {"type": "reminder", "scheduleTime": 1, "scheduleUnit": "hours", "queryString": "релизы в моих репозиториях"}`
-        };
-
-        const requestBody = {
-            modelUri: `gpt://${process.env.YANDEX_FOLDER_ID}/yandexgpt/latest`,
-            completionOptions: {
-                stream: false,
-                temperature: 0.2, // Низкая температура для точной классификации
-                maxTokens: 300
-            },
-            messages: [
-                systemMessage,
-                { role: 'user', text: userMessage }
-            ]
-        };
+Ответ: {"type": "reminder", "scheduleTime": 1, "scheduleUnit": "hours", "queryString": "релизы в моих репозиториях"}`;
 
         try {
-            const response = await fetch('https://llm.api.cloud.yandex.net/foundationModels/v1/completion', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Api-Key ${process.env.YANDEX_API_KEY}`,
-                    'x-folder-id': process.env.YANDEX_FOLDER_ID
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                throw new Error(`YandexGPT API error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            const llmResponse = data.result.alternatives[0].message.text.trim();
+            const llmResponse = await this.huggingFaceClient.callWithPrompt(
+                systemPrompt, 
+                userMessage, 
+                0.2,  // Низкая температура для точной классификации
+                300
+            );
             
             console.log('[Classifier] Ответ LLM:', llmResponse);
             
