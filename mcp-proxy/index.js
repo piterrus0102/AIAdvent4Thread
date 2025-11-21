@@ -21,7 +21,7 @@
 //       │             │             │                │
 //  ┌────▼──────┐ ┌───▼────────┐ ┌──▼──────────┐ ┌──▼─────────────┐
 //  │ MCPClient │ │ GitHubMCP  │ │ AppDatabase │ │  HuggingFace   │
-//  │           │ │   Client   │ │             │ │ Qwen2.5-7B-    │
+//  │           │ │   Client   │ │             │ │ L3-8B-Stheno   │
 //  └────┬──────┘ └────┬───────┘ └─────────────┘ │  Instruct      │
 //       │             │                          │  (External)    │
 //  ┌────▼──────┐ ┌───▼───────────┐              └────────────────┘
@@ -42,6 +42,10 @@ import AppDatabase from './database/AppDatabase.js';
 import MCPServer from './mcp/MCPServer.js';
 import MCPClient from './mcp/MCPClient.js';
 import GitHubMCPClient from './mcp/GitHubMCPClient.js';
+import WardrobeMCPServer from './mcp/WardrobeMCPServer.js';
+import WardrobeMCPClient from './mcp/WardrobeMCPClient.js';
+import WeatherMCPServer from './mcp/WeatherMCPServer.js';
+import WeatherMCPClient from './mcp/WeatherMCPClient.js';
 import MainServer from './server/MainServer.js';
 import RequestClassifier from './server/RequestClassifier.js';
 
@@ -59,14 +63,47 @@ app.use(express.json());
 // DEPENDENCY INJECTION - Создание и связывание компонентов
 // =============================================================================
 
+console.log('[App] 🚀 Инициализация компонентов...');
+
+// База данных
 const database = new AppDatabase();
+console.log('[App] ✅ База данных инициализирована');
+
+// Локальный MCP сервер
 const mcpServer = new MCPServer();
 const mcpClient = new MCPClient(mcpServer);
-const githubMCPClient = new GitHubMCPClient();
-const mainServer = new MainServer(mcpClient, mcpServer, database, githubMCPClient);
-const requestClassifier = new RequestClassifier();
+console.log('[App] ✅ Локальный MCP сервер инициализирован');
 
-console.log('[App] ✅ Все компоненты инициализированы');
+// GitHub MCP клиент
+const githubMCPClient = new GitHubMCPClient();
+console.log('[App] ✅ GitHub MCP клиент инициализирован');
+
+// Wardrobe MCP сервер (гардеробная)
+const wardrobeMCPServer = new WardrobeMCPServer(database);
+const wardrobeMCPClient = new WardrobeMCPClient(wardrobeMCPServer);
+console.log('[App] ✅ Wardrobe MCP сервер инициализирован (гардеробная)');
+
+// Weather MCP сервер (погода)
+const weatherMCPServer = new WeatherMCPServer();
+const weatherMCPClient = new WeatherMCPClient(weatherMCPServer);
+console.log('[App] ✅ Weather MCP сервер инициализирован (погода)');
+
+// Главный сервер (оркестратор)
+const mainServer = new MainServer(
+    mcpClient, 
+    mcpServer, 
+    database, 
+    githubMCPClient, 
+    wardrobeMCPClient, 
+    weatherMCPClient
+);
+console.log('[App] ✅ MainServer инициализирован (оркестратор)');
+
+// Классификатор запросов
+const requestClassifier = new RequestClassifier();
+console.log('[App] ✅ RequestClassifier инициализирован');
+
+console.log('[App] ====== Все компоненты готовы ======');
 
 // =============================================================================
 // API ENDPOINTS - REST API для Android приложения
@@ -74,7 +111,7 @@ console.log('[App] ✅ Все компоненты инициализирова�
 
 /**
  * POST /api/chat
- * Отправить сообщение в чат (используется HuggingFace Qwen2.5-7B-Instruct + MCP)
+ * Отправить сообщение в чат (используется HuggingFace L3-8B-Stheno + MCP)
  * 
  * Аналог: @POST("/api/chat") suspend fun chat(@Body request: ChatRequest)
  */
@@ -433,13 +470,24 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         server: 'AIAdvent4Thread MCP Proxy',
+        version: '2.0.0 (MCP Orchestration)',
         architecture: {
             app: 'Android App',
             api: 'Express REST API',
             server: 'MainServer (Orchestrator)',
-            mcp: 'Local MCP + GitHub MCP',
-            database: 'SQLite',
-            llm: 'HuggingFace Qwen2.5-7B-Instruct'
+            mcp_servers: {
+                local: 'MCPServer (локальные инструменты)',
+                wardrobe: 'WardrobeMCPServer (гардеробная)',
+                weather: 'WeatherMCPServer (погода Open-Meteo)',
+                github: 'GitHubMCPClient (опционально)'
+            },
+            database: 'SQLite (с таблицами для гардеробной)',
+            llm: 'HuggingFace L3-8B-Stheno'
+        },
+        features: {
+            orchestration: 'Одновременная работа нескольких MCP серверов',
+            github_mode: 'Дополняет инструменты (не заменяет)',
+            example: 'что мне сегодня одеть? → погода + гардеробная'
         },
         timestamp: new Date().toISOString()
     });
@@ -537,16 +585,23 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('\n========================================================================================================');
     console.log(`🚀 AIAdvent4Thread MCP Proxy Server запущен на http://0.0.0.0:${PORT}`);
     console.log('========================================================================================================');
-    console.log('\n📐 Архитектура (Clean Architecture):');
+    console.log('\n📐 Архитектура (Clean Architecture + MCP Orchestration):');
     console.log('  📱 Android App');
     console.log('     ↓ HTTP REST API');
     console.log('  🌐 Express Server (index.js)');
     console.log('     ↓');
     console.log('  🧠 MainServer (Orchestrator)');
     console.log('     ├─→ 🔧 MCPClient → MCPServer (Локальные инструменты)');
-    console.log('     ├─→ 🐙 GitHubMCPClient → github-mcp-server (Go binary)');
+    console.log('     ├─→ 👔 WardrobeMCPClient → WardrobeMCPServer (Гардеробная)');
+    console.log('     ├─→ 🌤️  WeatherMCPClient → WeatherMCPServer (Погода Open-Meteo)');
+    console.log('     ├─→ 🐙 GitHubMCPClient → github-mcp-server (опционально)');
     console.log('     ├─→ 💾 AppDatabase (SQLite)');
-    console.log('     └─→ 🤖 HuggingFace Qwen2.5-7B-Instruct (LLM)');
+    console.log('     └─→ 🤖 HuggingFace Qwen/Qwen2.5-7B-Instruct (LLM)');
+    console.log('\n🎯 Возможности оркестрации:');
+    console.log('  • Одновременная работа нескольких MCP серверов');
+    console.log('  • Автоматический выбор правильного сервера для каждого инструмента');
+    console.log('  • GitHub MCP дополняет инструменты (не заменяет)');
+    console.log('  • Пример: "что мне сегодня одеть?" → погода + гардеробная');
     console.log('\n📡 API Endpoints:');
     console.log(`  POST   /api/chat              - Отправить сообщение`);
     console.log(`  POST   /api/message-count     - Обновить счетчик`);
@@ -554,7 +609,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`  GET    /api/tools             - Список инструментов`);
     console.log(`  POST   /api/sync-messages     - Синхронизация сообщений`);
     console.log(`  GET    /api/messages          - Получить сообщения`);
-    console.log(`  POST   /api/mcp-mode          - Переключить MCP режим`);
+    console.log(`  POST   /api/mcp-mode          - Включить/выключить GitHub MCP`);
     console.log(`  DELETE /api/messages/clear    - Очистить историю`);
     console.log(`  POST   /api/reminder/create   - Создать напоминание`);
     console.log(`  DELETE /api/reminder/:id      - Остановить напоминание`);

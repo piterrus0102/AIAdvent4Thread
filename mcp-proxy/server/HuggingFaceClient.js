@@ -1,7 +1,7 @@
 // =============================================================================
 // HuggingFaceClient - Клиент для работы с HuggingFace API
 // =============================================================================
-// Использует Qwen2.5-7B-Instruct (третья модель)
+// Использует Qwen/Qwen2.5-7B-Instruct
 // =============================================================================
 
 import dotenv from 'dotenv';
@@ -22,17 +22,19 @@ class HuggingFaceClient {
     }
 
     /**
-     * Вызвать модель Qwen2.5-7B-Instruct
+     * Вызвать модель L3-8B-Stheno
      * 
      * @param {Array} messages - Массив сообщений в формате {role: 'system'|'user'|'assistant', text: string}
      * @param {number} temperature - Температура генерации (по умолчанию 0.7)
      * @param {number} maxTokens - Максимальное количество токенов (по умолчанию 2000)
+     * @param {Array} tools - Массив инструментов в формате MCP (опционально)
      * @returns {Promise<string>} - Ответ модели
      */
-    async callModel(messages, temperature = 0.7, maxTokens = 2000) {
-        console.log('[HuggingFace] Вызов Qwen2.5-7B-Instruct');
+    async callModel(messages, temperature = 0.7, maxTokens = 2000, tools = null) {
+        console.log('[HuggingFace] Вызов Qwen/Qwen2.5-7B-Instruct');
         console.log(`[HuggingFace] Сообщений: ${messages.length}`);
         console.log(`[HuggingFace] Temperature: ${temperature}`);
+        console.log(`[HuggingFace] Tools передано: ${tools ? tools.length : 0}`);
         
         // Преобразуем формат сообщений из {role, text} в {role, content}
         const formattedMessages = messages.map(msg => ({
@@ -46,8 +48,27 @@ class HuggingFaceClient {
             stream: false,
             max_tokens: maxTokens,
             temperature: temperature,
-            top_p: 0.9
+            top_p: 0.95  // Для Qwen thinking mode
         };
+        
+        // Добавляем tools в формате OpenAI, если они переданы
+        if (tools && tools.length > 0) {
+            requestBody.tools = tools.map(tool => ({
+                type: 'function',
+                function: {
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters || tool.inputSchema || {
+                        type: 'object',
+                        properties: {},
+                        required: []
+                    }
+                }
+            }));
+            
+            console.log(`[HuggingFace] ✅ Добавлено ${requestBody.tools.length} инструментов в запрос`);
+            console.log(`[HuggingFace] Список: ${requestBody.tools.map(t => t.function.name).join(', ')}`);
+        }
 
         try {
             const response = await fetch(this.apiUrl, {
@@ -64,14 +85,22 @@ class HuggingFaceClient {
                 console.error('[HuggingFace] Ошибка API:', response.status, errorText);
                 
                 if (response.status === 503 && (errorText.includes('loading') || errorText.includes('Loading'))) {
-                    throw new Error('⏳ Модель Qwen2.5-7B загружается. Попробуйте через 20-30 секунд.');
+                    throw new Error('⏳ Модель Qwen/Qwen2.5-7B-Instruct загружается. Попробуйте через 20-30 секунд.');
                 }
                 
                 throw new Error(`HuggingFace API error: ${response.status} - ${errorText}`);
             }
 
             const data = await response.json();
-            const responseText = data.choices[0].message.content;
+            let responseText = data.choices[0].message.content;
+            
+            // Парсим и удаляем <think>...</think> блоки для Qwen thinking mode
+            const thinkPattern = /<think>[\s\S]*?<\/think>/g;
+            const thinkMatches = responseText.match(thinkPattern);
+            if (thinkMatches) {
+                console.log('[HuggingFace] 🧠 Thinking content найден, удаляем из ответа');
+                responseText = responseText.replace(thinkPattern, '').trim();
+            }
             
             console.log('[HuggingFace] ✅ Ответ получен');
             console.log('[HuggingFace]', responseText.substring(0, 150) + '...');
@@ -105,4 +134,6 @@ class HuggingFaceClient {
 }
 
 export default HuggingFaceClient;
+
+
 
