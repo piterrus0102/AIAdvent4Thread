@@ -42,11 +42,40 @@ class AppDatabase {
                 last_updated INTEGER DEFAULT (strftime('%s', 'now'))
             );
 
+            -- Таблица для одежды (Wardrobe)
+            CREATE TABLE IF NOT EXISTS wardrobe_clothes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                season TEXT NOT NULL,
+                color TEXT,
+                material TEXT,
+                temperature_min INTEGER,
+                temperature_max INTEGER,
+                weather_conditions TEXT
+            );
+
+            -- Таблица для обуви (Wardrobe)
+            CREATE TABLE IF NOT EXISTS wardrobe_shoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                season TEXT NOT NULL,
+                color TEXT,
+                material TEXT,
+                temperature_min INTEGER,
+                temperature_max INTEGER,
+                weather_conditions TEXT
+            );
+
             -- GitHub данные сохраняются в таблицу messages
             -- Отдельные таблицы для каждого инструмента не нужны!
         `);
 
         console.log('[Database] Таблицы созданы/проверены');
+        
+        // Предзаполнение данными гардеробной (если таблицы пусты)
+        this.seedWardrobeData();
     }
 
     // =========================================================================
@@ -188,6 +217,98 @@ class AppDatabase {
     // Аналогия Android: не создаём отдельную Room таблицу для каждого
     // Retrofit endpoint - используем одну таблицу Message для всех ответов
     // =========================================================================
+
+    // =========================================================================
+    // Методы для работы с гардеробной (Wardrobe)
+    // =========================================================================
+
+    /**
+     * Предзаполнить таблицы гардеробной данными
+     */
+    seedWardrobeData() {
+        // Проверяем, не заполнены ли уже таблицы
+        const clothesCount = this.db.prepare('SELECT COUNT(*) as count FROM wardrobe_clothes').get().count;
+        const shoesCount = this.db.prepare('SELECT COUNT(*) as count FROM wardrobe_shoes').get().count;
+
+        if (clothesCount > 0 && shoesCount > 0) {
+            console.log('[Database] Гардеробная уже содержит данные');
+            return;
+        }
+
+        console.log('[Database] Предзаполнение гардеробной...');
+
+        // Одежда
+        const clothesData = [
+            { name: 'Легкая футболка', type: 'верх', season: 'лето', color: 'белая', material: 'хлопок', temp_min: 20, temp_max: 40, weather: 'солнечно, ясно' },
+            { name: 'Рубашка с коротким рукавом', type: 'верх', season: 'лето', color: 'синяя', material: 'лён', temp_min: 18, temp_max: 35, weather: 'солнечно, облачно' },
+            { name: 'Свитер тонкий', type: 'верх', season: 'весна-осень', color: 'серый', material: 'шерсть', temp_min: 10, temp_max: 20, weather: 'облачно, прохладно' },
+            { name: 'Толстовка', type: 'верх', season: 'весна-осень', color: 'черная', material: 'хлопок', temp_min: 8, temp_max: 18, weather: 'облачно, ветер' },
+            { name: 'Теплый свитер', type: 'верх', season: 'зима', color: 'темно-синий', material: 'шерсть', temp_min: -10, temp_max: 10, weather: 'холодно, снег' },
+            { name: 'Зимняя куртка', type: 'верх', season: 'зима', color: 'черная', material: 'пуховик', temp_min: -30, temp_max: 5, weather: 'мороз, снег, ветер' },
+            { name: 'Легкая ветровка', type: 'верх', season: 'весна-осень', color: 'синяя', material: 'полиэстер', temp_min: 10, temp_max: 20, weather: 'дождь, ветер' },
+            { name: 'Джинсы', type: 'низ', season: 'всесезонные', color: 'синие', material: 'деним', temp_min: 5, temp_max: 25, weather: 'любая' },
+            { name: 'Шорты', type: 'низ', season: 'лето', color: 'бежевые', material: 'хлопок', temp_min: 20, temp_max: 40, weather: 'солнечно, жарко' },
+            { name: 'Теплые брюки', type: 'низ', season: 'зима', color: 'черные', material: 'шерсть', temp_min: -20, temp_max: 10, weather: 'холодно, мороз' }
+        ];
+
+        // Обувь
+        const shoesData = [
+            { name: 'Сандалии', type: 'летняя', season: 'лето', color: 'коричневые', material: 'кожа', temp_min: 20, temp_max: 40, weather: 'солнечно, жарко, сухо' },
+            { name: 'Кроссовки летние', type: 'спортивная', season: 'лето', color: 'белые', material: 'текстиль', temp_min: 15, temp_max: 35, weather: 'солнечно, облачно' },
+            { name: 'Кроссовки демисезонные', type: 'спортивная', season: 'весна-осень', color: 'черные', material: 'синтетика', temp_min: 5, temp_max: 20, weather: 'облачно, дождь' },
+            { name: 'Туфли классические', type: 'классическая', season: 'весна-осень', color: 'черные', material: 'кожа', temp_min: 10, temp_max: 25, weather: 'сухо, офис' },
+            { name: 'Ботинки демисезонные', type: 'демисезонная', season: 'весна-осень', color: 'коричневые', material: 'кожа', temp_min: 0, temp_max: 15, weather: 'дождь, слякоть' },
+            { name: 'Зимние ботинки', type: 'зимняя', season: 'зима', color: 'черные', material: 'кожа+мех', temp_min: -25, temp_max: 5, weather: 'снег, мороз, слякоть' },
+            { name: 'Резиновые сапоги', type: 'дождевая', season: 'весна-осень', color: 'синие', material: 'резина', temp_min: 5, temp_max: 20, weather: 'дождь, лужи' }
+        ];
+
+        // Вставка одежды
+        const insertClothes = this.db.prepare(`
+            INSERT INTO wardrobe_clothes (name, type, season, color, material, temperature_min, temperature_max, weather_conditions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const insertClothesMany = this.db.transaction((items) => {
+            for (const item of items) {
+                insertClothes.run(item.name, item.type, item.season, item.color, item.material, item.temp_min, item.temp_max, item.weather);
+            }
+        });
+
+        insertClothesMany(clothesData);
+
+        // Вставка обуви
+        const insertShoes = this.db.prepare(`
+            INSERT INTO wardrobe_shoes (name, type, season, color, material, temperature_min, temperature_max, weather_conditions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const insertShoesMany = this.db.transaction((items) => {
+            for (const item of items) {
+                insertShoes.run(item.name, item.type, item.season, item.color, item.material, item.temp_min, item.temp_max, item.weather);
+            }
+        });
+
+        insertShoesMany(shoesData);
+
+        console.log(`[Database] Добавлено одежды: ${clothesData.length}`);
+        console.log(`[Database] Добавлено обуви: ${shoesData.length}`);
+    }
+
+    /**
+     * Получить ВСЮ одежду из гардеробной (без фильтрации)
+     */
+    getAllClothes() {
+        const stmt = this.db.prepare('SELECT * FROM wardrobe_clothes');
+        return stmt.all();
+    }
+
+    /**
+     * Получить ВСЮ обувь из гардеробной (без фильтрации)
+     */
+    getAllShoes() {
+        const stmt = this.db.prepare('SELECT * FROM wardrobe_shoes');
+        return stmt.all();
+    }
 
     /**
      * Закрыть соединение с БД
