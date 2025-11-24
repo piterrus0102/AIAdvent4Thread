@@ -10,6 +10,7 @@ import {
 } from './ServerPrompts.js';
 import ReminderManager from './ReminderManager.js';
 import HuggingFaceClient from './HuggingFaceClient.js';
+import RAGService from '../rag/RAGService.js';
 
 // Загружаем переменные окружения
 dotenv.config();
@@ -44,6 +45,9 @@ class MainServer {
         
         // Планировщик напоминаний
         this.reminderManager = new ReminderManager(this);
+        
+        // RAG сервис для поиска по курсу
+        this.ragService = new RAGService();
     }
 
     // =========================================================================
@@ -386,6 +390,96 @@ class MainServer {
             
         } catch (error) {
             console.error('[Server] ❌ Ошибка обработки сообщения:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    // =========================================================================
+    // RAG - Retrieval-Augmented Generation
+    // =========================================================================
+    
+    /**
+     * Поиск по курсу через RAG
+     * 
+     * @param {string} query - Вопрос пользователя
+     * @param {number} topK - Количество результатов
+     * @returns {Promise<Object>} - Результаты поиска
+     */
+    async searchCourse(query, topK = 3) {
+        console.log(`[Server] RAG поиск по запросу: "${query}"`);
+        
+        try {
+            const result = await this.ragService.query(query, topK);
+            
+            console.log(`[Server] ✓ Найдено уроков: ${result.lessons.length}`);
+            
+            return {
+                success: true,
+                ...result
+            };
+            
+        } catch (error) {
+            console.error('[Server] ❌ Ошибка RAG поиска:', error.message);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Ответить на вопрос по курсу с использованием RAG + LLM
+     * 
+     * @param {string} query - Вопрос пользователя
+     * @param {number} topK - Количество релевантных документов
+     * @returns {Promise<Object>} - Ответ с контекстом и генерацией
+     */
+    async answerCourseQuestion(query, topK = 3) {
+        console.log(`[Server] RAG + LLM для вопроса: "${query}"`);
+        
+        try {
+            // Используем RAG с LLM через callback
+            const result = await this.ragService.queryWithLLM(
+                query,
+                async (messages, tools) => {
+                    // Вызываем LLM через существующий метод
+                    return await this.callLLM(messages, tools);
+                },
+                topK
+            );
+            
+            console.log(`[Server] ✓ Ответ сгенерирован`);
+            
+            return {
+                success: true,
+                ...result
+            };
+            
+        } catch (error) {
+            console.error('[Server] ❌ Ошибка RAG + LLM:', error.message);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Получить статистику векторного индекса
+     * 
+     * @returns {Promise<Object>} - Статистика
+     */
+    async getCourseIndexStats() {
+        try {
+            const stats = await this.ragService.getStats();
+            return {
+                success: true,
+                stats: stats
+            };
+        } catch (error) {
             return {
                 success: false,
                 error: error.message
