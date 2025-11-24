@@ -5,18 +5,16 @@
 // =============================================================================
 
 import dotenv from 'dotenv';
-dotenv.config();
-
-const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
-
-if (!HUGGINGFACE_API_KEY) {
-    console.error('❌ Не задан HUGGINGFACE_API_KEY');
-    console.error('Добавьте HUGGINGFACE_API_KEY в файл .env в папке mcp-proxy');
-    process.exit(1);
-}
 
 class HuggingFaceClient {
     constructor() {
+        // Проверяем API ключ при создании экземпляра
+        this.apiKey = process.env.HUGGINGFACE_API_KEY;
+        
+        if (!this.apiKey) {
+            throw new Error('HUGGINGFACE_API_KEY не задан. Добавьте его в файл .env');
+        }
+        
         this.modelId = 'Qwen/Qwen2.5-7B-Instruct';
         this.apiUrl = 'https://router.huggingface.co/v1/chat/completions';
     }
@@ -75,7 +73,7 @@ class HuggingFaceClient {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${HUGGINGFACE_API_KEY}`
+                    'Authorization': `Bearer ${this.apiKey}`
                 },
                 body: JSON.stringify(requestBody)
             });
