@@ -12,6 +12,7 @@
     "@modelcontextprotocol/sdk": "^1.0.4",
     "axios": "^1.7.2",
     "better-sqlite3": "^12.4.1",
+    "chalk": "^5.6.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.2"

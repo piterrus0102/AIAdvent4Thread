@@ -36,6 +36,7 @@
 // =============================================================================
 import express from 'express';
 import cors from 'cors';
+import readline from 'readline';
 
 // Наши модули
 import AppDatabase from './database/AppDatabase.js';
@@ -437,6 +438,70 @@ app.post('/api/mcp-mode', async (req, res) => {
 });
 
 /**
+ * POST /api/rag-mode
+ * Переключить режим RAG (включить/выключить)
+ */
+app.post('/api/rag-mode', async (req, res) => {
+    try {
+        const { useRAG } = req.body;
+        
+        if (typeof useRAG !== 'boolean') {
+            return res.status(400).json({
+                success: false,
+                error: 'useRAG (boolean) is required'
+            });
+        }
+        
+        console.log(`\n[API] POST /api/rag-mode: ${useRAG ? 'RAG (Векторный поиск)' : 'Обычный (Прямой LLM)'}`);
+        
+        mainServer.setRAGMode(useRAG);
+        
+        res.json({
+            success: true,
+            mode: useRAG ? 'rag' : 'direct',
+            description: useRAG 
+                ? 'RAG режим: векторный поиск по курсу + LLM'
+                : 'Обычный режим: прямой запрос к LLM с инструментами'
+        });
+        
+    } catch (error) {
+        console.error('[API] ❌ Ошибка /api/rag-mode:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/rag-mode
+ * Получить текущий режим RAG
+ */
+app.get('/api/rag-mode', async (req, res) => {
+    try {
+        console.log('\n[API] GET /api/rag-mode');
+        
+        const isRAGEnabled = mainServer.getRAGMode();
+        
+        res.json({
+            success: true,
+            mode: isRAGEnabled ? 'rag' : 'direct',
+            enabled: isRAGEnabled,
+            description: isRAGEnabled 
+                ? 'RAG режим: векторный поиск по курсу + LLM'
+                : 'Обычный режим: прямой запрос к LLM с инструментами'
+        });
+        
+    } catch (error) {
+        console.error('[API] ❌ Ошибка /api/rag-mode:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
  * DELETE /api/messages/clear
  * Очистить историю сообщений
  */
@@ -470,7 +535,7 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         server: 'AIAdvent4Thread MCP Proxy',
-        version: '2.0.0 (MCP Orchestration)',
+        version: '2.0.0 (MCP Orchestration + RAG)',
         architecture: {
             app: 'Android App',
             api: 'Express REST API',
@@ -482,12 +547,18 @@ app.get('/health', (req, res) => {
                 github: 'GitHubMCPClient (опционально)'
             },
             database: 'SQLite (с таблицами для гардеробной)',
-            llm: 'HuggingFace L3-8B-Stheno'
+            llm: 'HuggingFace L3-8B-Stheno',
+            rag: 'RAGService (Векторный поиск по курсу Android Studio)'
         },
         features: {
             orchestration: 'Одновременная работа нескольких MCP серверов',
             github_mode: 'Дополняет инструменты (не заменяет)',
+            rag_mode: 'Переключаемый режим: RAG (векторный поиск) или прямой LLM',
             example: 'что мне сегодня одеть? → погода + гардеробная'
+        },
+        modes: {
+            rag_enabled: mainServer.getRAGMode(),
+            github_enabled: mainServer.useGitHubMCP
         },
         timestamp: new Date().toISOString()
     });
@@ -610,6 +681,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`  POST   /api/sync-messages     - Синхронизация сообщений`);
     console.log(`  GET    /api/messages          - Получить сообщения`);
     console.log(`  POST   /api/mcp-mode          - Включить/выключить GitHub MCP`);
+    console.log(`  POST   /api/rag-mode          - Включить/выключить RAG режим 🔍`);
+    console.log(`  GET    /api/rag-mode          - Получить текущий режим RAG`);
     console.log(`  DELETE /api/messages/clear    - Очистить историю`);
     console.log(`  POST   /api/reminder/create   - Создать напоминание`);
     console.log(`  DELETE /api/reminder/:id      - Остановить напоминание`);
@@ -629,9 +702,81 @@ console.log(`  - Request timeout: ${server.timeout}ms (60s)`);
 console.log(`  - Keep-alive timeout: ${server.keepAliveTimeout}ms (65s)`);
 console.log(`  - Headers timeout: ${server.headersTimeout}ms (66s)`);
 
+// =============================================================================
+// CONSOLE INTERFACE - Консольное управление сервером
+// =============================================================================
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: ''
+});
+
+console.log('\n⌨️  КОНСОЛЬНОЕ УПРАВЛЕНИЕ:');
+console.log('  Команды:');
+console.log('    rag on    - Включить RAG режим (векторный поиск по курсу)');
+console.log('    rag off   - Выключить RAG режим (прямой запрос к LLM)');
+console.log('    rag       - Показать текущий режим RAG');
+console.log('    status    - Показать статус всех режимов');
+console.log('    help      - Показать список команд');
+console.log('');
+
+rl.on('line', (input) => {
+    const command = input.trim().toLowerCase();
+    
+    switch(command) {
+        case 'rag on':
+            mainServer.setRAGMode(true);
+            break;
+            
+        case 'rag off':
+            mainServer.setRAGMode(false);
+            break;
+            
+        case 'rag':
+            const ragEnabled = mainServer.getRAGMode();
+            console.log(`\n[Console] Текущий режим RAG: ${ragEnabled ? '✅ ВКЛЮЧЕН' : '❌ ВЫКЛЮЧЕН'}`);
+            console.log(`[Console] Описание: ${ragEnabled 
+                ? 'Векторный поиск по курсу + LLM'
+                : 'Прямой запрос к LLM с инструментами'}\n`);
+            break;
+            
+        case 'status':
+            const isRAG = mainServer.getRAGMode();
+            const isGitHub = mainServer.useGitHubMCP;
+            console.log('\n[Console] ====== СТАТУС СЕРВЕРА ======');
+            console.log(`[Console] RAG режим:    ${isRAG ? '✅ ВКЛЮЧЕН' : '❌ ВЫКЛЮЧЕН'}`);
+            console.log(`[Console] GitHub MCP:   ${isGitHub ? '✅ ВКЛЮЧЕН' : '❌ ВЫКЛЮЧЕН'}`);
+            console.log(`[Console] Напоминаний:  ${mainServer.reminderManager.reminders.size}`);
+            console.log('[Console] ====================================\n');
+            break;
+            
+        case 'help':
+            console.log('\n[Console] ====== ДОСТУПНЫЕ КОМАНДЫ ======');
+            console.log('[Console] rag on    - Включить RAG режим');
+            console.log('[Console] rag off   - Выключить RAG режим');
+            console.log('[Console] rag       - Показать текущий режим');
+            console.log('[Console] status    - Статус всех режимов');
+            console.log('[Console] help      - Показать эту справку');
+            console.log('[Console] =====================================\n');
+            break;
+            
+        case '':
+            // Игнорируем пустые строки
+            break;
+            
+        default:
+            if (command) {
+                console.log(`\n[Console] ⚠️  Неизвестная команда: "${command}"`);
+                console.log('[Console] Используйте "help" для списка команд\n');
+            }
+    }
+});
+
 // Graceful shutdown (аналог onDestroy в Android)
 process.on('SIGINT', async () => {
     console.log('\n🛑 Остановка сервера...');
+    rl.close();
     mainServer.reminderManager.stopAll();
     database.close();
     process.exit(0);
@@ -639,6 +784,7 @@ process.on('SIGINT', async () => {
 
 process.on('SIGTERM', async () => {
     console.log('\n🛑 Остановка сервера...');
+    rl.close();
     mainServer.reminderManager.stopAll();
     database.close();
     process.exit(0);
