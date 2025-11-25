@@ -44,6 +44,9 @@ class MainServer {
         this.useGitHubMCP = false;
         this.githubCredentials = null;
         
+        // Режим работы RAG (включен/выключен)
+        this.useRAG = false;
+        
         // Список всех MCP клиентов для оркестрации
         // Wardrobe и Weather всегда активны
         this.baseMCPClients = [
@@ -79,6 +82,27 @@ class MainServer {
             this.githubCredentials = { token: githubToken };
         }
         console.log(`[Server] GitHub MCP: ${useGitHub ? 'Включен (дополняет инструменты)' : 'Выключен'}`);
+    }
+
+    /**
+     * Установить режим работы RAG
+     * 
+     * @param {boolean} useRAG - Использовать RAG режим?
+     */
+    setRAGMode(useRAG) {
+        this.useRAG = useRAG;
+        console.log(`\n[Server] ====== РЕЖИМ ИЗМЕНЕН ======`);
+        console.log(`[Server] RAG: ${useRAG ? '✅ ВКЛЮЧЕН (Векторный поиск + LLM)' : '❌ ВЫКЛЮЧЕН (Прямой запрос к LLM)'}`);
+        console.log(`[Server] ====================================\n`);
+    }
+
+    /**
+     * Получить текущий режим RAG
+     * 
+     * @returns {boolean}
+     */
+    getRAGMode() {
+        return this.useRAG;
     }
 
     /**
@@ -499,6 +523,37 @@ class MainServer {
     async handleMessage(userMessage, messageHistory) {
         try {
             console.log('[Server] Обработка сообщения от приложения...');
+            console.log(`[Server] Режим RAG: ${this.useRAG ? 'ВКЛЮЧЕН' : 'ВЫКЛЮЧЕН'}`);
+            
+            // ===== РЕЖИМ RAG: Векторный поиск + LLM =====
+            if (this.useRAG) {
+                console.log('[Server] 🔍 Использую RAG режим (векторный поиск по курсу)');
+                
+                try {
+                    const ragResult = await this.answerCourseQuestion(userMessage, 3);
+                    
+                    if (!ragResult.success) {
+                        throw new Error(ragResult.error);
+                    }
+                    
+                    return {
+                        success: true,
+                        message: ragResult.answer,
+                        toolUsed: 'RAG (Векторный поиск)',
+                        toolResult: `Найдено уроков: ${ragResult.lessons.length}\n` +
+                                   ragResult.lessons.map(l => `- ${l.title} (${l.relevance})`).join('\n'),
+                        ragLessons: ragResult.lessons
+                    };
+                    
+                } catch (ragError) {
+                    console.error('[Server] ❌ Ошибка RAG режима:', ragError);
+                    // Fallback на обычный режим если RAG не работает
+                    console.log('[Server] ⚠️ Переключаюсь на обычный режим (fallback)');
+                }
+            }
+            
+            // ===== ОБЫЧНЫЙ РЕЖИМ: Прямой запрос к LLM =====
+            console.log('[Server] 💬 Использую обычный режим (прямой запрос к LLM)');
             
             // Получаем инструменты от активного MCP
             const tools = await this.getToolsForLLM();
