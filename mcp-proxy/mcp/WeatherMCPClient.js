@@ -22,7 +22,7 @@ class WeatherMCPClient {
      * @returns {Promise<{tools: Array}>} - Список инструментов
      */
     async listTools() {
-        console.log('[Weather-MCP-Client] Запрос списка инструментов от Weather-Server');
+        // console.log('[Weather-MCP-Client] Запрос списка инструментов от Weather-Server');
         return this.weatherServer.listTools();
     }
 

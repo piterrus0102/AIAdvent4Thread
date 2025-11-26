@@ -100,6 +100,16 @@ const mainServer = new MainServer(
 );
 console.log('[App] ✅ MainServer инициализирован (оркестратор)');
 
+// Инициализируем RAG сервис (загружаем векторный индекс)
+console.log('[App] 🔄 Инициализация RAG сервиса...');
+try {
+    await mainServer.ragService.initialize();
+    console.log('[App] ✅ RAG сервис инициализирован');
+} catch (error) {
+    console.error('[App] ⚠️ RAG сервис недоступен:', error.message);
+    console.error('[App] Для использования RAG запустите: cd rag-proxy && node build-index.js');
+}
+
 // Классификатор запросов
 const requestClassifier = new RequestClassifier();
 console.log('[App] ✅ RequestClassifier инициализирован');
@@ -197,6 +207,12 @@ app.post('/api/chat', async (req, res) => {
         // ===== ОБЫЧНЫЙ ЧАТ =====
         console.log('[API] 💬 LLM определила: обычный чат');
         const result = await mainServer.handleMessage(message, history);
+        
+        if (result.incorrectRAG) {
+            console.log('[API] 🚨 LLM обнаружила жалобу на неправильное понимание!');
+            console.log('[API] Флаг incorrectRAG установлен - требуется улучшение релевантности');
+        }
+        
         res.json(result);
         
     } catch (error) {
@@ -399,9 +415,42 @@ app.get('/api/messages', async (req, res) => {
 
 /**
  * POST /api/mcp-mode
- * Переключить режим MCP (GitHub/локальный)
+ * Включить/выключить базовые MCP инструменты (local, wardrobe, weather)
  */
 app.post('/api/mcp-mode', async (req, res) => {
+    try {
+        const { useMCP } = req.body;
+        
+        if (typeof useMCP !== 'boolean') {
+            return res.status(400).json({
+                success: false,
+                error: 'useMCP (boolean) is required'
+            });
+        }
+        
+        console.log(`\n[API] POST /api/mcp-mode: ${useMCP ? 'Включен' : 'Выключен'}`);
+        
+        mainServer.setMCPMode(useMCP);
+        
+        res.json({
+            success: true,
+            useMCP: useMCP
+        });
+        
+    } catch (error) {
+        console.error('[API] ❌ Ошибка /api/mcp-mode:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/github-mcp-mode
+ * Включить/выключить GitHub MCP
+ */
+app.post('/api/github-mcp-mode', async (req, res) => {
     try {
         const { useGitHub, githubToken } = req.body;
         
@@ -419,17 +468,17 @@ app.post('/api/mcp-mode', async (req, res) => {
             });
         }
         
-        console.log(`\n[API] POST /api/mcp-mode: ${useGitHub ? 'GitHub' : 'Локальный'}`);
+        console.log(`\n[API] POST /api/github-mcp-mode: ${useGitHub ? 'Включен' : 'Выключен'}`);
         
-        mainServer.setMCPMode(useGitHub, githubToken);
+        mainServer.setGitHubMCPMode(useGitHub, githubToken);
         
         res.json({
             success: true,
-            mode: useGitHub ? 'github' : 'local'
+            useGitHub: useGitHub
         });
         
     } catch (error) {
-        console.error('[API] ❌ Ошибка /api/mcp-mode:', error);
+        console.error('[API] ❌ Ошибка /api/github-mcp-mode:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -494,6 +543,65 @@ app.get('/api/rag-mode', async (req, res) => {
         
     } catch (error) {
         console.error('[API] ❌ Ошибка /api/rag-mode:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/rag-demo-mode
+ * Включить/выключить демо-режим RAG (субоптимальный первый ответ)
+ */
+app.post('/api/rag-demo-mode', async (req, res) => {
+    try {
+        const { demoMode } = req.body;
+        
+        console.log(`\n[API] POST /api/rag-demo-mode`);
+        console.log(`[API] Демо-режим: ${demoMode ? 'ВКЛЮЧЕН' : 'ВЫКЛЮЧЕН'}`);
+        
+        // Устанавливаем демо-режим в RAG сервисе
+        mainServer.ragService.setDemoMode(demoMode);
+        
+        res.json({
+            success: true,
+            demoMode: mainServer.ragService.demoMode,
+            message: demoMode 
+                ? 'Демо-режим включен: первый ответ будет субоптимальным'
+                : 'Демо-режим выключен: нормальная работа'
+        });
+        
+    } catch (error) {
+        console.error('[API] ❌ Ошибка /api/rag-demo-mode:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/rag-demo-mode
+ * Получить состояние демо-режима RAG
+ */
+app.get('/api/rag-demo-mode', async (req, res) => {
+    try {
+        console.log('\n[API] GET /api/rag-demo-mode');
+        
+        const demoMode = mainServer.ragService.demoMode;
+        
+        res.json({
+            success: true,
+            demoMode: demoMode,
+            description: demoMode
+                ? '🎭 Демо-режим: первый ответ субоптимальный (для демонстрации реранкинга)'
+                : '✅ Нормальный режим: оптимальные ответы с первого раза',
+            rerankingOptions: mainServer.ragService.rerankingOptions
+        });
+        
+    } catch (error) {
+        console.error('[API] ❌ Ошибка /api/rag-demo-mode:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -680,7 +788,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`  GET    /api/tools             - Список инструментов`);
     console.log(`  POST   /api/sync-messages     - Синхронизация сообщений`);
     console.log(`  GET    /api/messages          - Получить сообщения`);
-    console.log(`  POST   /api/mcp-mode          - Включить/выключить GitHub MCP`);
+    console.log(`  POST   /api/mcp-mode          - Включить/выключить базовые MCP инструменты`);
+    console.log(`  POST   /api/github-mcp-mode   - Включить/выключить GitHub MCP`);
     console.log(`  POST   /api/rag-mode          - Включить/выключить RAG режим 🔍`);
     console.log(`  GET    /api/rag-mode          - Получить текущий режим RAG`);
     console.log(`  DELETE /api/messages/clear    - Очистить историю`);
@@ -714,6 +823,9 @@ const rl = readline.createInterface({
 
 console.log('\n⌨️  КОНСОЛЬНОЕ УПРАВЛЕНИЕ:');
 console.log('  Команды:');
+console.log('    mcp on    - Включить MCP инструменты (local, wardrobe, weather)');
+console.log('    mcp off   - Выключить MCP инструменты');
+console.log('    mcp       - Показать текущий режим MCP');
 console.log('    rag on    - Включить RAG режим (векторный поиск по курсу)');
 console.log('    rag off   - Выключить RAG режим (прямой запрос к LLM)');
 console.log('    rag       - Показать текущий режим RAG');
@@ -725,6 +837,22 @@ rl.on('line', (input) => {
     const command = input.trim().toLowerCase();
     
     switch(command) {
+        case 'mcp on':
+            mainServer.setMCPMode(true);
+            break;
+            
+        case 'mcp off':
+            mainServer.setMCPMode(false);
+            break;
+            
+        case 'mcp':
+            const mcpEnabled = mainServer.getMCPMode();
+            console.log(`\n[Console] Текущий режим MCP: ${mcpEnabled ? '✅ ВКЛЮЧЕН' : '❌ ВЫКЛЮЧЕН'}`);
+            console.log(`[Console] Описание: ${mcpEnabled 
+                ? 'Инструменты MCP доступны (local, wardrobe, weather)'
+                : 'Только прямой запрос к LLM без инструментов'}\n`);
+            break;
+            
         case 'rag on':
             mainServer.setRAGMode(true);
             break;
@@ -742,9 +870,11 @@ rl.on('line', (input) => {
             break;
             
         case 'status':
+            const isMCP = mainServer.getMCPMode();
             const isRAG = mainServer.getRAGMode();
             const isGitHub = mainServer.useGitHubMCP;
             console.log('\n[Console] ====== СТАТУС СЕРВЕРА ======');
+            console.log(`[Console] MCP режим:    ${isMCP ? '✅ ВКЛЮЧЕН' : '❌ ВЫКЛЮЧЕН'}`);
             console.log(`[Console] RAG режим:    ${isRAG ? '✅ ВКЛЮЧЕН' : '❌ ВЫКЛЮЧЕН'}`);
             console.log(`[Console] GitHub MCP:   ${isGitHub ? '✅ ВКЛЮЧЕН' : '❌ ВЫКЛЮЧЕН'}`);
             console.log(`[Console] Напоминаний:  ${mainServer.reminderManager.reminders.size}`);
@@ -753,9 +883,12 @@ rl.on('line', (input) => {
             
         case 'help':
             console.log('\n[Console] ====== ДОСТУПНЫЕ КОМАНДЫ ======');
+            console.log('[Console] mcp on    - Включить MCP инструменты');
+            console.log('[Console] mcp off   - Выключить MCP инструменты');
+            console.log('[Console] mcp       - Показать текущий режим MCP');
             console.log('[Console] rag on    - Включить RAG режим');
             console.log('[Console] rag off   - Выключить RAG режим');
-            console.log('[Console] rag       - Показать текущий режим');
+            console.log('[Console] rag       - Показать текущий режим RAG');
             console.log('[Console] status    - Статус всех режимов');
             console.log('[Console] help      - Показать эту справку');
             console.log('[Console] =====================================\n');

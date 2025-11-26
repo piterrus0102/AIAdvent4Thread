@@ -19,8 +19,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Пути к файлам
-const CHUNKS_FILE = path.join(__dirname, '../../course_chunks_smart.json');
-const INDEX_FILE = path.join(__dirname, '../data/vector_index.json');
+const CHUNKS_FILE = path.join(__dirname, 'course_chunks_smart.json');
+const INDEX_FILE = path.join(__dirname, 'data/vector_index.json');
 
 // =============================================================================
 // MAIN

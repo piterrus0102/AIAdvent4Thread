@@ -22,7 +22,7 @@ class WardrobeMCPClient {
      * @returns {Promise<{tools: Array}>} - Список инструментов
      */
     async listTools() {
-        console.log('[Wardrobe-MCP-Client] Запрос списка инструментов от Wardrobe-Server');
+        // console.log('[Wardrobe-MCP-Client] Запрос списка инструментов от Wardrobe-Server');
         return this.wardrobeServer.listTools();
     }
 

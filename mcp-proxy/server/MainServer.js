@@ -10,7 +10,7 @@ import {
 } from './ServerPrompts.js';
 import ReminderManager from './ReminderManager.js';
 import HuggingFaceClient from './HuggingFaceClient.js';
-import RAGService from '../rag/RAGService.js';
+import RAGService from '../../rag-proxy/RAGService.js';
 
 // Загружаем переменные окружения
 dotenv.config();
@@ -40,6 +40,9 @@ class MainServer {
         this.wardrobeMCPClient = wardrobeMCPClient;
         this.weatherMCPClient = weatherMCPClient;
         
+        // Режим работы MCP (включен/выключен)
+        this.useMCP = false; // По умолчанию ВЫКЛЮЧЕН (как RAG)
+        
         // Режим работы GitHub MCP (включен/выключен)
         this.useGitHubMCP = false;
         this.githubCredentials = null;
@@ -47,13 +50,12 @@ class MainServer {
         // Режим работы RAG (включен/выключен)
         this.useRAG = false;
         
-        // Список всех MCP клиентов для оркестрации
-        // Wardrobe и Weather всегда активны
-        this.baseMCPClients = [
-            { name: 'local', client: mcpClient },
-            { name: 'wardrobe', client: wardrobeMCPClient },
-            { name: 'weather', client: weatherMCPClient }
-        ];
+        // Базовые MCP клиенты (local, wardrobe, weather)
+        this.mcpClientsPool = {
+            local: { name: 'local', client: mcpClient },
+            wardrobe: { name: 'wardrobe', client: wardrobeMCPClient },
+            weather: { name: 'weather', client: weatherMCPClient }
+        };
         
         // HuggingFace клиент (Qwen/Qwen2.5-7B-Instruct)
         this.huggingFaceClient = new HuggingFaceClient();
@@ -70,13 +72,25 @@ class MainServer {
     // =========================================================================
     
     /**
+     * Установить режим работы базовых MCP серверов (local, wardrobe, weather)
+     * 
+     * @param {boolean} useMCP - Использовать базовые MCP инструменты?
+     */
+    setMCPMode(useMCP) {
+        this.useMCP = useMCP;
+        console.log(`\n[Server] ====== РЕЖИМ ИЗМЕНЕН ======`);
+        console.log(`[Server] MCP: ${useMCP ? '✅ ВКЛЮЧЕН (инструменты доступны)' : '❌ ВЫКЛЮЧЕН (только прямой LLM)'}`);
+        console.log(`[Server] ====================================\n`);
+    }
+
+    /**
      * Установить режим работы GitHub MCP
      * Теперь GitHub MCP дополняет инструменты, а не заменяет их
      *
      * @param {boolean} useGitHub - Использовать GitHub MCP?
      * @param {string} githubToken - GitHub токен (если useGitHub = true)
      */
-    setMCPMode(useGitHub, githubToken = null) {
+    setGitHubMCPMode(useGitHub, githubToken = null) {
         this.useGitHubMCP = useGitHub;
         if (useGitHub && githubToken) {
             this.githubCredentials = { token: githubToken };
@@ -97,6 +111,15 @@ class MainServer {
     }
 
     /**
+     * Получить текущий режим MCP
+     * 
+     * @returns {boolean}
+     */
+    getMCPMode() {
+        return this.useMCP;
+    }
+
+    /**
      * Получить текущий режим RAG
      * 
      * @returns {boolean}
@@ -109,7 +132,16 @@ class MainServer {
      * Получить все активные MCP клиенты для оркестрации
      */
     getActiveMCPClients() {
-        const clients = [...this.baseMCPClients];
+        const clients = [];
+        
+        // Добавляем базовые MCP клиенты если MCP включен
+        if (this.useMCP) {
+            clients.push(
+                this.mcpClientsPool.local,
+                this.mcpClientsPool.wardrobe,
+                this.mcpClientsPool.weather
+            );
+        }
         
         // Добавляем GitHub MCP если включен
         if (this.useGitHubMCP) {
@@ -153,11 +185,11 @@ class MainServer {
      * @returns {Promise<Array>} - Список инструментов в формате YandexGPT
      */
     async getToolsForLLM() {
-        console.log('[Server] ====== ОРКЕСТРАЦИЯ: Сбор инструментов ======');
+        // console.log('[Server] ====== ОРКЕСТРАЦИЯ: Сбор инструментов ======');
         
         const clients = this.getActiveMCPClients();
-        console.log(`[Server] Активных MCP серверов: ${clients.length}`);
-        clients.forEach(({ name }) => console.log(`[Server]   - ${name}`));
+        // console.log(`[Server] Активных MCP серверов: ${clients.length}`);
+        // clients.forEach(({ name }) => console.log(`[Server]   - ${name}`));
         
         const allTools = [];
         
@@ -176,7 +208,7 @@ class MainServer {
                 
                 // Получаем инструменты
                 const toolsResponse = await client.listTools();
-                console.log(`[Server] MCP '${name}': ${toolsResponse.tools.length} инструментов`);
+                // console.log(`[Server] MCP '${name}': ${toolsResponse.tools.length} инструментов`);
                 
                 // Добавляем префикс к имени инструмента для отладки (опционально)
                 const tools = toolsResponse.tools.map(tool => ({
@@ -193,8 +225,8 @@ class MainServer {
             }
         }
         
-        console.log(`[Server] ====== Всего инструментов: ${allTools.length} ======`);
-        console.log(`[Server] Список: ${allTools.map(t => t.name).join(', ')}`);
+        // console.log(`[Server] ====== Всего инструментов: ${allTools.length} ======`);
+        // console.log(`[Server] Список: ${allTools.map(t => t.name).join(', ')}`);
         
         return allTools;
     }
@@ -229,42 +261,42 @@ class MainServer {
      * @returns {Promise<{text, toolUsed, toolResult}>} - Ответ LLM
      */
     async callLLM(messages, tools, customSystemMessage = null) {
-        console.log('[Server] Вызов HuggingFace (Qwen/Qwen2.5-7B-Instruct)');
-        console.log(`[Server] Сообщений в истории: ${messages.length}`);
-        console.log(`[Server] Инструментов: ${tools.map(t => t.name).join(', ')}`);
+        // console.log('[Server] Вызов HuggingFace (Qwen/Qwen2.5-7B-Instruct)');
+        // console.log(`[Server] Сообщений в истории: ${messages.length}`);
+        // console.log(`[Server] Инструментов: ${tools.map(t => t.name).join(', ')}`);
 
         // Создаем system message с инструкциями для LLM
         const systemMessage = customSystemMessage || createSystemMessage(tools);
 
         // ===== ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ =====
-        console.log('\n[PITERRUS] ====================================================================================================');
-        console.log('[PITERRUS] 📤 ОТПРАВКА ЗАПРОСА В LLM');
-        console.log('[PITERRUS] ====================================================================================================');
-        console.log('[PITERRUS] 🔧 ДОСТУПНЫЕ ИНСТРУМЕНТЫ (передаются в LLM через API):');
-        tools.forEach((tool, index) => {
-            console.log(`[PITERRUS]   ${index + 1}. ${tool.name}`);
-            console.log(`[PITERRUS]      Описание: ${tool.description}`);
-            if (tool.parameters && tool.parameters.properties) {
-                console.log(`[PITERRUS]      Параметры:`);
-                Object.entries(tool.parameters.properties).forEach(([paramName, paramInfo]) => {
-                    const required = tool.parameters.required?.includes(paramName) ? '(обязательный)' : '(опциональный)';
-                    console.log(`[PITERRUS]        - ${paramName} ${required}: ${paramInfo.description || paramInfo.type}`);
-                });
-            }
-        });
-        console.log('[PITERRUS] ====================================================================================================');
-        console.log('[PITERRUS] ⚠️  ВАЖНО: Qwen использует text-based tool calling с THINKING MODE!');
-        console.log('[PITERRUS] Настройки: temperature=0.6, top_p=0.95 (парсинг <think> тегов включен)');
-        console.log('[PITERRUS] Инструменты передаются через текстовый system prompt (см. выше).');
-        console.log('[PITERRUS] ====================================================================================================');
-        console.log('[PITERRUS] 💬 СИСТЕМА ПРОМПТ:');
-        console.log(`[PITERRUS] ${systemMessage.text}`);
-        console.log('[PITERRUS] ====================================================================================================');
-        console.log('[PITERRUS] 📜 ИСТОРИЯ СООБЩЕНИЙ:');
-        messages.forEach((msg, index) => {
-            console.log(`[PITERRUS]   ${index + 1}. [${msg.role}]: ${msg.text.substring(0, 200)}${msg.text.length > 200 ? '...' : ''}`);
-        });
-        console.log('[PITERRUS] ====================================================================================================\n');
+        // console.log('\n[PITERRUS] ====================================================================================================');
+        // console.log('[PITERRUS] 📤 ОТПРАВКА ЗАПРОСА В LLM');
+        // console.log('[PITERRUS] ====================================================================================================');
+        // console.log('[PITERRUS] 🔧 ДОСТУПНЫЕ ИНСТРУМЕНТЫ (передаются в LLM через API):');
+        // tools.forEach((tool, index) => {
+        //     console.log(`[PITERRUS]   ${index + 1}. ${tool.name}`);
+        //     console.log(`[PITERRUS]      Описание: ${tool.description}`);
+        //     if (tool.parameters && tool.parameters.properties) {
+        //         console.log(`[PITERRUS]      Параметры:`);
+        //         Object.entries(tool.parameters.properties).forEach(([paramName, paramInfo]) => {
+        //             const required = tool.parameters.required?.includes(paramName) ? '(обязательный)' : '(опциональный)';
+        //             console.log(`[PITERRUS]        - ${paramName} ${required}: ${paramInfo.description || paramInfo.type}`);
+        //         });
+        //     }
+        // });
+        // console.log('[PITERRUS] ====================================================================================================');
+        // console.log('[PITERRUS] ⚠️  ВАЖНО: Qwen использует text-based tool calling с THINKING MODE!');
+        // console.log('[PITERRUS] Настройки: temperature=0.6, top_p=0.95 (парсинг <think> тегов включен)');
+        // console.log('[PITERRUS] Инструменты передаются через текстовый system prompt (см. выше).');
+        // console.log('[PITERRUS] ====================================================================================================');
+        // console.log('[PITERRUS] 💬 СИСТЕМА ПРОМПТ:');
+        // console.log(`[PITERRUS] ${systemMessage.text}`);
+        // console.log('[PITERRUS] ====================================================================================================');
+        // console.log('[PITERRUS] 📜 ИСТОРИЯ СООБЩЕНИЙ:');
+        // messages.forEach((msg, index) => {
+        //     console.log(`[PITERRUS]   ${index + 1}. [${msg.role}]: ${msg.text.substring(0, 200)}${msg.text.length > 200 ? '...' : ''}`);
+        // });
+        // console.log('[PITERRUS] ====================================================================================================\n');
 
         try {
             // Первый запрос к HuggingFace
@@ -284,9 +316,7 @@ class MainServer {
             let toolCallCount = 0;
             let conversationHistory = [...messages];
             const usedTools = [];
-            
-            console.log('[Server] Начинаем цикл обработки инструментов...');
-            
+
             while (currentMessage.includes('USE_TOOL:')) {
                 console.log(`[Server] Сообщение содержит: ${currentMessage.substring(0, 300)}`);
                 
@@ -409,19 +439,19 @@ class MainServer {
                     text: `${allResultsText}\n\nИспользуй эти данные для ответа. Не выдумывай!`
                 });
                 
-                console.log('\n[PITERRUS] ====================================================================================================');
-                console.log('[PITERRUS] 🔄 ПОВТОРНЫЙ ЗАПРОС В LLM (после выполнения ВСЕХ инструментов)');
-                console.log('[PITERRUS] ====================================================================================================');
-                console.log(`[PITERRUS] ✅ Выполнено инструментов: ${allResults.length}`);
-                allResults.forEach((r, idx) => {
-                    console.log(`[PITERRUS]   ${idx + 1}. ${r.name}: ${r.result.substring(0, 150)}${r.result.length > 150 ? '...' : ''}`);
-                });
-                console.log('[PITERRUS] ====================================================================================================');
-                console.log('[PITERRUS] 📜 ОБНОВЛЕННАЯ ИСТОРИЯ СООБЩЕНИЙ:');
-                conversationHistory.forEach((msg, index) => {
-                    console.log(`[PITERRUS]   ${index + 1}. [${msg.role}]: ${msg.text.substring(0, 200)}${msg.text.length > 200 ? '...' : ''}`);
-                });
-                console.log('[PITERRUS] ====================================================================================================\n');
+                // console.log('\n[PITERRUS] ====================================================================================================');
+                // console.log('[PITERRUS] 🔄 ПОВТОРНЫЙ ЗАПРОС В LLM (после выполнения ВСЕХ инструментов)');
+                // console.log('[PITERRUS] ====================================================================================================');
+                // console.log(`[PITERRUS] ✅ Выполнено инструментов: ${allResults.length}`);
+                // allResults.forEach((r, idx) => {
+                //     console.log(`[PITERRUS]   ${idx + 1}. ${r.name}: ${r.result.substring(0, 150)}${r.result.length > 150 ? '...' : ''}`);
+                // });
+                // console.log('[PITERRUS] ====================================================================================================');
+                // console.log('[PITERRUS] 📜 ОБНОВЛЕННАЯ ИСТОРИЯ СООБЩЕНИЙ:');
+                // conversationHistory.forEach((msg, index) => {
+                //     console.log(`[PITERRUS]   ${index + 1}. [${msg.role}]: ${msg.text.substring(0, 200)}${msg.text.length > 200 ? '...' : ''}`);
+                // });
+                // console.log('[PITERRUS] ====================================================================================================\n');
                 
                 const followUpMessages = [systemMessage, ...conversationHistory];
                 currentMessage = await this.huggingFaceClient.callModel(followUpMessages, 0.6, 2000);
@@ -432,11 +462,6 @@ class MainServer {
                 console.log('[Server] ============================================');
                 console.log(`[Server] Содержит USE_TOOL?: ${currentMessage.includes('USE_TOOL:')}`);
             }
-            
-            console.log('[Server] Цикл обработки инструментов завершен');
-            console.log(`[Server] Всего вызовов: ${toolCallCount}`);
-            console.log(`[Server] Использовано инструментов: ${usedTools.length}`);
-
             
             // ===== ОЧИСТКА ФИНАЛЬНОГО ОТВЕТА =====
             // Убираем любые остатки USE_TOOL команд из финального ответа
@@ -482,6 +507,23 @@ class MainServer {
             
             cleanedMessage = cleanedMessage.trim();
             
+            // ===== ПРОВЕРКА НА INCORRECT_RAG_ANSWER =====
+            if (cleanedMessage === 'INCORRECT_RAG_ANSWER') {
+                console.log('\n========================================');
+                console.log('🚨 INCORRECT_RAG_ANSWER ОБНАРУЖЕН!');
+                console.log('========================================');
+                console.log('Пользователь сообщил о неправильном понимании вопроса');
+                console.log('Требуется улучшение релевантности поиска');
+                console.log('========================================\n');
+                
+                return {
+                    text: cleanedMessage,
+                    toolUsed: null,
+                    toolResult: null,
+                    incorrectRAG: true
+                };
+            }
+            
             // Возвращаем результат
             if (usedTools.length > 0) {
                 console.log(`[Server] ✅ Цепочка из ${usedTools.length} инструментов выполнена`);
@@ -494,7 +536,6 @@ class MainServer {
                 };
             }
             
-            console.log('[Server] Прямой ответ без инструментов');
             console.log(`[Server] Ответ: ${cleanedMessage.substring(0, 100)}...`);
             
             return {
@@ -536,13 +577,76 @@ class MainServer {
                         throw new Error(ragResult.error);
                     }
                     
+                    // ===== ОБНАРУЖЕН INCORRECT_RAG_ANSWER =====
+                    if (ragResult.incorrectRAG) {
+                        console.log('\n========================================');
+                        console.log('🚨 INCORRECT_RAG_ANSWER ОБНАРУЖЕН!');
+                        console.log('========================================');
+                        console.log('Пользователь недоволен ответом.');
+                        console.log('Включаю РЕРАНКИНГ и повторяю поиск...');
+                        console.log('========================================\n');
+                        
+                        // Находим оригинальный вопрос из истории (последний user message)
+                        let originalQuery = userMessage;
+                        
+                        // Ищем в истории последний вопрос пользователя (не жалобу)
+                        for (let i = messageHistory.length - 1; i >= 0; i--) {
+                            const msg = messageHistory[i];
+                            if (msg.role === 'user' && !msg.text.toLowerCase().includes('неправильно') 
+                                && !msg.text.toLowerCase().includes('не то') 
+                                && !msg.text.toLowerCase().includes('не понял')) {
+                                originalQuery = msg.text;
+                                console.log(`[Server] 🔍 Найден оригинальный вопрос: "${originalQuery}"`);
+                                break;
+                            }
+                        }
+                        
+                        // Включаем реранкинг
+                        this.ragService.setReranking(true);
+                        
+                        // Повторяем поиск с реранкингом
+                        console.log('[Server] 🔄 Повторный запрос С РЕРАНКИНГОМ...');
+                        const improvedResult = await this.answerCourseQuestion(originalQuery, 3);
+                        
+                        // Выключаем реранкинг обратно (только для этого запроса)
+                        this.ragService.setReranking(false);
+                        
+                        if (!improvedResult.success) {
+                            throw new Error(improvedResult.error);
+                        }
+                        
+                        console.log('\n========================================');
+                        console.log('✅ РЕРАНКИНГ ЗАВЕРШЕН');
+                        console.log(`Найдено уроков: ${improvedResult.lessons.length}`);
+                        console.log('========================================\n');
+                        
+                        return {
+                            success: true,
+                            message: '🔄 Я провел более тщательный поиск по курсу:\n\n' + improvedResult.answer,
+                            toolUsed: 'RAG (Векторный поиск + Реранкинг)',
+                            toolResult: `РЕРАНКИНГ включен!\nНайдено уроков: ${improvedResult.lessons.length}\n` +
+                                       improvedResult.lessons.map(l => {
+                                           const llmScore = l.llm_score ? ` [LLM: ${l.llm_score}]` : '';
+                                           return `- ${l.title} (${l.relevance}${llmScore})`;
+                                       }).join('\n') +
+                                       (improvedResult.reranking_stats ? 
+                                        `\n\nСтатистика реранкинга:\n- Начальных: ${improvedResult.reranking_stats.initial}\n- После фильтра: ${improvedResult.reranking_stats.after_llm}` 
+                                        : ''),
+                            ragLessons: improvedResult.lessons,
+                            incorrectRAG: false,
+                            rerankingUsed: true
+                        };
+                    }
+                    
+                    // ===== ОБЫЧНЫЙ ОТВЕТ (без INCORRECT_RAG_ANSWER) =====
                     return {
                         success: true,
                         message: ragResult.answer,
                         toolUsed: 'RAG (Векторный поиск)',
                         toolResult: `Найдено уроков: ${ragResult.lessons.length}\n` +
                                    ragResult.lessons.map(l => `- ${l.title} (${l.relevance})`).join('\n'),
-                        ragLessons: ragResult.lessons
+                        ragLessons: ragResult.lessons,
+                        incorrectRAG: false
                     };
                     
                 } catch (ragError) {
@@ -557,7 +661,7 @@ class MainServer {
             
             // Получаем инструменты от активного MCP
             const tools = await this.getToolsForLLM();
-            console.log(`[Server] Получено инструментов: ${tools.length}`);
+            // console.log(`[Server] Получено инструментов: ${tools.length}`);
             
             // Формируем историю сообщений
             const messages = [
@@ -572,7 +676,8 @@ class MainServer {
                 success: true,
                 message: response.text,
                 toolUsed: response.toolUsed || null,
-                toolResult: response.toolResult || null
+                toolResult: response.toolResult || null,
+                incorrectRAG: response.incorrectRAG || false
             };
             
         } catch (error) {

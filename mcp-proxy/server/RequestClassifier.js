@@ -84,7 +84,7 @@ class RequestClassifier {
                 300
             );
             
-            console.log('[Classifier] Ответ LLM:', llmResponse);
+            // console.log('[Classifier] Ответ LLM:', llmResponse);
             
             // Парсим JSON из ответа
             const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);

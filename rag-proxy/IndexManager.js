@@ -169,9 +169,10 @@ class IndexManager {
      * 
      * @param {string} query - Поисковый запрос
      * @param {number} topK - Количество результатов (по умолчанию 3)
+     * @param {number} minSimilarity - Минимальный порог similarity (опционально, 0.0-1.0)
      * @returns {Promise<Array>} - Найденные документы с оценкой релевантности
      */
-    async search(query, topK = 3) {
+    async search(query, topK = 3, minSimilarity = null) {
         if (!this.index) {
             throw new Error('Индекс не загружен. Сначала вызовите loadIndex()');
         }
@@ -195,8 +196,9 @@ class IndexManager {
             }
         }));
         
-        // Ищем топ-20 результатов для группировки
-        const allResults = this.vectorClient.findMostSimilar(queryVector, vectorsWithMetadata, Math.min(20, this.index.documents.length));
+        // Ищем результаты - берем как минимум 20 для группировки, но можем взять и больше если запрошено
+        const searchLimit = Math.max(20, topK * 3); // Минимум 20, или в 3 раза больше чем topK
+        const allResults = this.vectorClient.findMostSimilar(queryVector, vectorsWithMetadata, Math.min(searchLimit, this.index.documents.length));
         
         // 3. Группируем по parent_id и берем лучший чанк из каждой статьи
         const groupedByParent = new Map();
@@ -236,20 +238,38 @@ class IndexManager {
             
             const bestChunk = group.best_chunk;
             
+            // Для реранкинга используем ТОЛЬКО лучший чанк (не весь объединенный контент)
+            const bestChunkContent = bestChunk.metadata.content;
+            
             return {
                 id: group.parent_id,
                 similarity: group.max_similarity,
                 lesson_title: bestChunk.metadata.lesson_title,
                 section: bestChunk.metadata.section,
                 url: bestChunk.metadata.url,
-                content: combinedContent,
+                content: combinedContent,  // Полный контент для генерации ответа
+                best_chunk_content: bestChunkContent,  // Только лучший чанк для реранкинга
                 chunks_count: group.all_chunks.length,
                 metadata: bestChunk.metadata
             };
         });
         
-        console.log(`\n[IndexManager] ✓ Найдено ${formattedResults.length} уникальных уроков:`);
-        formattedResults.forEach((result, i) => {
+        // Применяем пороговую фильтрацию если указан minSimilarity
+        let finalResults = formattedResults;
+        
+        if (minSimilarity !== null) {
+            console.log(`\n[IndexManager] Применение пороговой фильтрации (>= ${(minSimilarity * 100).toFixed(1)}%)...`);
+            const beforeFilter = finalResults.length;
+            finalResults = finalResults.filter(r => r.similarity >= minSimilarity);
+            console.log(`[IndexManager] Результатов: ${beforeFilter} → ${finalResults.length}`);
+            
+            if (finalResults.length === 0) {
+                console.log(`[IndexManager] ⚠️ Все результаты отфильтрованы (similarity ниже порога)`);
+            }
+        }
+        
+        console.log(`\n[IndexManager] ✓ Найдено ${finalResults.length} уникальных уроков:`);
+        finalResults.forEach((result, i) => {
             const chunksInfo = result.chunks_count > 1 ? ` (${result.chunks_count} чанков)` : '';
             console.log(`\n  ${i + 1}. ${result.lesson_title}${chunksInfo}`);
             console.log(`     Релевантность: ${(result.similarity * 100).toFixed(2)}%`);
@@ -257,7 +277,7 @@ class IndexManager {
             console.log(`     URL: ${result.url || 'N/A'}`);
         });
         
-        return formattedResults;
+        return finalResults;
     }
 
     // =========================================================================

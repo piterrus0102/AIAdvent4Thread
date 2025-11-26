@@ -1,0 +1,27 @@
+{
+  "name": "rag-proxy",
+  "version": "1.0.0",
+  "description": "RAG (Retrieval-Augmented Generation) service for course Q&A",
+  "type": "module",
+  "main": "RAGService.js",
+  "scripts": {
+    "build-index": "node build-index.js",
+    "search": "node search-cli.js",
+    "create-chunks": "node create-smart-chunks.js",
+    "chat": "node chat-cli.js"
+  },
+  "keywords": [
+    "rag",
+    "vector-search",
+    "embeddings",
+    "llm"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "chalk": "^5.3.0",
+    "dotenv": "^16.0.3"
+  }
+}
+
