@@ -23,7 +23,7 @@ class MCPClient {
      * @returns {Promise<{tools: Array}>} - Список инструментов
      */
     async listTools() {
-        console.log('[MCP-Client] Запрос списка инструментов от MCP-Server');
+        // console.log('[MCP-Client] Запрос списка инструментов от MCP-Server');
         return this.mcpServer.listTools();
     }
 

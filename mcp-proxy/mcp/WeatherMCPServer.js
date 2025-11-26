@@ -53,7 +53,7 @@ class WeatherMCPServer {
      * @returns {{tools: Array}} - Список инструментов
      */
     listTools() {
-        console.log('[Weather-MCP-Server] Запрошен список инструментов');
+        // console.log('[Weather-MCP-Server] Запрошен список инструментов');
         return {
             tools: this.tools
         };

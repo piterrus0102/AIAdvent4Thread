@@ -105,7 +105,7 @@ class MCPServer {
      * @returns {{tools: Array}} - Список инструментов
      */
     listTools() {
-        console.log('[MCP-Server] Запрошен список инструментов');
+        // console.log('[MCP-Server] Запрошен список инструментов');
         return {
             tools: this.tools
         };

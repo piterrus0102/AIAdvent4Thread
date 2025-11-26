@@ -29,10 +29,10 @@ class HuggingFaceClient {
      * @returns {Promise<string>} - Ответ модели
      */
     async callModel(messages, temperature = 0.7, maxTokens = 2000, tools = null) {
-        console.log('[HuggingFace] Вызов Qwen/Qwen2.5-7B-Instruct');
-        console.log(`[HuggingFace] Сообщений: ${messages.length}`);
-        console.log(`[HuggingFace] Temperature: ${temperature}`);
-        console.log(`[HuggingFace] Tools передано: ${tools ? tools.length : 0}`);
+        // console.log('[HuggingFace] Вызов Qwen/Qwen2.5-7B-Instruct');
+        // console.log(`[HuggingFace] Сообщений: ${messages.length}`);
+        // console.log(`[HuggingFace] Temperature: ${temperature}`);
+        // console.log(`[HuggingFace] Tools передано: ${tools ? tools.length : 0}`);
         
         // Преобразуем формат сообщений из {role, text} в {role, content}
         const formattedMessages = messages.map(msg => ({
@@ -64,8 +64,8 @@ class HuggingFaceClient {
                 }
             }));
             
-            console.log(`[HuggingFace] ✅ Добавлено ${requestBody.tools.length} инструментов в запрос`);
-            console.log(`[HuggingFace] Список: ${requestBody.tools.map(t => t.function.name).join(', ')}`);
+            // console.log(`[HuggingFace] ✅ Добавлено ${requestBody.tools.length} инструментов в запрос`);
+            // console.log(`[HuggingFace] Список: ${requestBody.tools.map(t => t.function.name).join(', ')}`);
         }
 
         try {
@@ -100,8 +100,8 @@ class HuggingFaceClient {
                 responseText = responseText.replace(thinkPattern, '').trim();
             }
             
-            console.log('[HuggingFace] ✅ Ответ получен');
-            console.log('[HuggingFace]', responseText.substring(0, 150) + '...');
+            // console.log('[HuggingFace] ✅ Ответ получен');
+            // console.log('[HuggingFace]', responseText.substring(0, 150) + '...');
             
             return responseText;
             

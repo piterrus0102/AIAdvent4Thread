@@ -43,7 +43,7 @@ class WardrobeMCPServer {
      * @returns {{tools: Array}} - Список инструментов
      */
     listTools() {
-        console.log('[Wardrobe-MCP-Server] Запрошен список инструментов');
+        // console.log('[Wardrobe-MCP-Server] Запрошен список инструментов');
         return {
             tools: this.tools
         };

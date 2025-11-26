@@ -22,10 +22,10 @@ dotenv.config({ path: envPath });
 // Теперь импортируем остальное
 import VectorizationClient from './VectorizationClient.js';
 import IndexManager from './IndexManager.js';
-import HuggingFaceClient from '../server/HuggingFaceClient.js';
+import HuggingFaceClient from '../mcp-proxy/server/HuggingFaceClient.js';
 import readline from 'readline';
 
-const INDEX_FILE = path.join(__dirname, '../data/vector_index.json');
+const INDEX_FILE = path.join(__dirname, 'data/vector_index.json');
 const LLM_MODEL = 'Qwen/Qwen2.5-7B-Instruct'; // HuggingFace модель
 
 // Клиент для HuggingFace LLM

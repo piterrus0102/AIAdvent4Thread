@@ -14,7 +14,7 @@ cd mcp-proxy && npm start
 
 Терминал 2 (CLI клиент):
 ------------------------
-node mcp-proxy/chat-cli.js
+node rag-proxy/chat-cli.js
 
 Команды в клиенте:
   /status     - Показать режим сервера
