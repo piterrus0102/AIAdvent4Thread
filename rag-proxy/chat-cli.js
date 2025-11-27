@@ -177,14 +177,58 @@ async function main() {
             if (result.ragLessons && result.ragLessons.length > 0) {
                 console.log(chalk.green('📚 Найдено уроков: ' + result.ragLessons.length));
                 result.ragLessons.forEach((lesson, idx) => {
-                    console.log(chalk.gray(`   ${idx + 1}. ${lesson.title} (${lesson.relevance})`));
+                    // Формируем кликабельную ссылку для терминала
+                    const url = lesson.url ? `http://localhost:3000${lesson.url}` : null;
+                    const title = lesson.title;
+                    const relevance = lesson.relevance;
+                    const llmScore = lesson.llm_score ? ` | LLM: ${lesson.llm_score}` : '';
+                    
+                    if (url) {
+                        // Используем ANSI escape sequences для создания кликабельной ссылки
+                        // Формат: \x1b]8;;URL\x1b\\TEXT\x1b]8;;\x1b\\
+                        const clickableLink = `\x1b]8;;${url}\x1b\\${title}\x1b]8;;\x1b\\`;
+                        console.log(chalk.gray(`   ${idx + 1}. `) + chalk.cyan(clickableLink) + chalk.gray(` (${relevance}${llmScore})`));
+                    } else {
+                        console.log(chalk.gray(`   ${idx + 1}. ${title} (${relevance}${llmScore})`));
+                    }
                 });
                 console.log();
             }
 
             // Ответ
             console.log(chalk.bold.white('💬 Ответ:'));
-            console.log(chalk.white(result.message));
+            
+            // Обрабатываем специальные ссылки в формате [LESSON_LINK:id:title]
+            let formattedMessage = result.message;
+            
+            // Находим все ссылки в формате [LESSON_LINK:id:title]
+            const linkPattern = /\[LESSON_LINK:([^:]+):([^\]]+)\]/g;
+            const links = [];
+            let match;
+            
+            while ((match = linkPattern.exec(result.message)) !== null) {
+                const lessonId = match[1];
+                const lessonTitle = match[2];
+                
+                // Находим URL для этого урока
+                const lesson = result.ragLessons?.find(l => l.id === lessonId);
+                if (lesson && lesson.url) {
+                    const url = `http://localhost:3000${lesson.url}`;
+                    // Заменяем на формат: Название - полный URL (терминал сам сделает URL кликабельным)
+                    const replacement = chalk.cyan(`${lessonTitle}`) + '\n   ' + chalk.blue.underline(url);
+                    links.push({
+                        original: match[0],
+                        replacement: replacement
+                    });
+                }
+            }
+            
+            // Заменяем все найденные ссылки
+            for (const link of links) {
+                formattedMessage = formattedMessage.replace(link.original, link.replacement);
+            }
+            
+            console.log(chalk.white(formattedMessage));
             
             printSeparator();
             console.log();

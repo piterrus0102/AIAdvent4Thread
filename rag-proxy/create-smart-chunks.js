@@ -14,8 +14,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const INPUT_FILE = path.join(__dirname, '../../course_chunks_for_vectorization.json');
-const OUTPUT_FILE = path.join(__dirname, '../../course_chunks_smart.json');
+const INPUT_FILE = path.join(__dirname, '../course_chunks_for_vectorization.json');
+const OUTPUT_FILE = path.join(__dirname, '../course_chunks_smart.json');
 
 const MAX_CHUNK_SIZE = 600; // Максимальный размер чанка в символах (~100 слов, оптимально для точного поиска)
 
