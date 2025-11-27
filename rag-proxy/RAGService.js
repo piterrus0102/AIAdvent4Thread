@@ -387,7 +387,9 @@ class RAGService {
         
         results.forEach((result, i) => {
             context += `=== УРОК ${i + 1}: ${result.lesson_title} ===\n`;
+            context += `ID урока: ${result.id}\n`;
             context += `Раздел: ${result.section}\n`;
+            context += `URL: http://localhost:3000${result.url}\n`;
             context += `Релевантность: ${(result.similarity * 100).toFixed(1)}%\n\n`;
             context += `${result.content}\n\n`;
             context += '─'.repeat(80) + '\n\n';
