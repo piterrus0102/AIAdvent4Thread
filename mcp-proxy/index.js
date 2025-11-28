@@ -636,6 +636,104 @@ app.delete('/api/messages/clear', async (req, res) => {
 });
 
 /**
+ * GET /api/rag-chat/history
+ * Получить историю RAG-чата
+ */
+app.get('/api/rag-chat/history', async (req, res) => {
+    try {
+        console.log('\n[API] GET /api/rag-chat/history');
+        
+        const history = database.getRagChatHistory();
+        
+        console.log(`[API] Найдено сообщений: ${history.length}`);
+        
+        res.json({
+            success: true,
+            history: history.map(msg => ({
+                id: msg.id,
+                role: msg.role,
+                text: msg.text,
+                ragMetadata: msg.rag_metadata ? JSON.parse(msg.rag_metadata) : null,
+                timestamp: msg.timestamp,
+                createdAt: msg.created_at
+            })),
+            count: history.length
+        });
+        
+    } catch (error) {
+        console.error('[API] ❌ Ошибка /api/rag-chat/history:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/rag-chat/message
+ * Добавить сообщение в историю RAG-чата
+ */
+app.post('/api/rag-chat/message', async (req, res) => {
+    try {
+        const { role, text, ragMetadata } = req.body;
+        
+        if (!role || !text) {
+            return res.status(400).json({
+                success: false,
+                error: 'role and text are required'
+            });
+        }
+        
+        if (role !== 'user' && role !== 'assistant') {
+            return res.status(400).json({
+                success: false,
+                error: 'role must be either "user" or "assistant"'
+            });
+        }
+        
+        console.log(`\n[API] POST /api/rag-chat/message: ${role}`);
+        
+        const result = database.addRagChatMessage(role, text, ragMetadata);
+        
+        res.json({
+            success: true,
+            id: result.id
+        });
+        
+    } catch (error) {
+        console.error('[API] ❌ Ошибка /api/rag-chat/message:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * DELETE /api/rag-chat/clear
+ * Очистить историю RAG-чата
+ */
+app.delete('/api/rag-chat/clear', async (req, res) => {
+    try {
+        console.log('\n[API] DELETE /api/rag-chat/clear');
+        
+        const result = database.clearRagChatHistory();
+        
+        res.json({
+            success: true,
+            deleted: result.deleted
+        });
+        
+    } catch (error) {
+        console.error('[API] ❌ Ошибка /api/rag-chat/clear:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
  * GET /health
  * Health check
  */
@@ -793,6 +891,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`  POST   /api/rag-mode          - Включить/выключить RAG режим 🔍`);
     console.log(`  GET    /api/rag-mode          - Получить текущий режим RAG`);
     console.log(`  DELETE /api/messages/clear    - Очистить историю`);
+    console.log(`  GET    /api/rag-chat/history  - Получить историю RAG-чата 💬`);
+    console.log(`  POST   /api/rag-chat/message  - Добавить сообщение в RAG-чат 💬`);
+    console.log(`  DELETE /api/rag-chat/clear    - Очистить историю RAG-чата 💬`);
     console.log(`  POST   /api/reminder/create   - Создать напоминание`);
     console.log(`  DELETE /api/reminder/:id      - Остановить напоминание`);
     console.log(`  GET    /api/reminders         - Список напоминаний`);

@@ -7,12 +7,158 @@
 // =============================================================================
 
 /**
- * Создать system message для LLM с инструкциями по использованию инструментов
+ * Создать system message для LLM с роутингом RAG (если RAG включен)
  * 
  * @param {Array<{name: string, description: string}>} tools - Список доступных инструментов
- * @returns {{role: string, text: string}} - System message для YandexGPT
+ * @param {boolean} ragEnabled - Включен ли режим RAG
+ * @param {boolean} expectingIncorrectRAG - Ожидаем ли INCORRECT_RAG_ANSWER?
+ * @returns {{role: string, text: string}} - System message для LLM
  */
-export function createSystemMessage(tools) {
+export function createSystemMessage(tools, ragEnabled = false, expectingIncorrectRAG = false) {
+    // Если RAG включен - добавляем логику роутинга
+    if (ragEnabled) {
+        return createSystemMessageWithRAGRouting(tools, expectingIncorrectRAG);
+    }
+    
+    // Иначе - обычный промпт без упоминания RAG
+    return createSystemMessageWithoutRAG(tools);
+}
+
+/**
+ * System message С роутингом RAG (когда RAG включен)
+ * LLM должна определять: USE_RAG или COMMON
+ * 
+ * @param {Array} tools - Список инструментов
+ * @param {boolean} expectingIncorrectRAG - Ожидаем ли детекцию жалоб?
+ */
+function createSystemMessageWithRAGRouting(tools, expectingIncorrectRAG = false) {
+    // Формируем список инструментов с параметрами
+    const toolsDescription = tools.length > 0 
+        ? tools.map(tool => {
+            let desc = `- ${tool.name}: ${tool.description}`;
+            
+            // Добавляем информацию о параметрах, если они есть
+            if (tool.parameters && tool.parameters.properties) {
+                const params = Object.entries(tool.parameters.properties)
+                    .map(([key, value]) => {
+                        const required = tool.parameters.required?.includes(key) ? ' (обязательный)' : ' (опциональный)';
+                        return `  ${key}${required}: ${value.description || value.type}`;
+                    })
+                    .join('\n');
+                desc += `\n  Параметры:\n${params}`;
+            }
+            
+            return desc;
+        }).join('\n\n')
+        : 'Нет доступных инструментов';
+
+    // Базовый текст промпта
+    let promptText = `🔀 РЕЖИМ: RAG РОУТИНГ ВКЛЮЧЕН
+
+Ты — интеллектуальный ассистент с доступом к базе знаний по Android разработке и Android Studio.`;
+
+    // Если ожидаем INCORRECT_RAG_ANSWER - добавляем детекцию жалоб
+    if (expectingIncorrectRAG) {
+        promptText += `
+
+**🚨 ПРИОРИТЕТ #1 - ДЕТЕКЦИЯ ЖАЛОБ НА ПРЕДЫДУЩИЙ ОТВЕТ:**
+
+Если пользователь выражает НЕДОВОЛЬСТВО предыдущим ответом:
+- Ругается (мат, грубость)
+- Говорит что ответ неверный/неправильный
+- Пишет короткие фразы: "не то", "неправильно", "ты неправ", "что за бред"
+
+→ Верни ОДНО СЛОВО:
+INCORRECT_RAG_ANSWER
+
+(БЕЗ дополнительного текста!)
+
+⚠️ Это НЕ новый вопрос про Android, это ЖАЛОБА на мой предыдущий ответ!`;
+    }
+
+    promptText += `
+
+**🎯 ГЛАВНАЯ ЗАДАЧА - РОУТИНГ ЗАПРОСОВ:**
+
+Для КАЖДОГО запроса пользователя ты ОБЯЗАН определить:
+
+1️⃣ Если вопрос касается Android разработки или Android Studio → верни СТРОГО ОДНО СЛОВО:
+USE_RAG
+
+⚠️ Android Studio вопросы включают:
+- Упоминания "Android Studio", "студия", "в студии"
+- Термины: Activity, Fragment, ViewModel, Jetpack, Compose, Kotlin
+- Инструменты IDE: Invalidate Caches, Power Save Mode, Debug, Build, APK
+- Меню IDE: File, Edit, View, Build, Run, Tools
+- XML layouts, Gradle, dependencies, plugins
+- Эмулятор, AVD, Device Manager
+- Любые вопросы про функции/меню/настройки IDE
+
+⚠️ ВАЖНО для USE_RAG: 
+- Верни ТОЛЬКО слово "USE_RAG"
+- БЕЗ точек, пробелов, переносов
+- БЕЗ какого-либо текста после
+- ТОЛЬКО: USE_RAG
+
+2️⃣ Если вопрос НЕ касается Android разработки (общие вопросы, погода, одежда, другие темы) → начни ответ со слова:
+COMMON
+(затем продолжи свой обычный ответ)
+
+**ПРИМЕРЫ РОУТИНГА:**
+
+✅ Android Studio вопросы (→ USE_RAG):
+"Как создать Activity?" → USE_RAG
+"Что такое ViewModel?" → USE_RAG
+"Invalidate Caches" → USE_RAG
+"power safe mode в студии" → USE_RAG (СТУДИЯ = Android Studio!)
+"debug apk в android studio" → USE_RAG
+"где меню File" → USE_RAG
+"как собрать APK" → USE_RAG
+
+⚠️ ВАЖНО: "студия", "в студии" = Android Studio = USE_RAG!
+
+❌ НЕ ДЕЛАЙ ТАК:
+"USE_RAG\n\nActivity — это компонент..." (НЕПРАВИЛЬНО!)
+✅ ТОЛЬКО: "USE_RAG" (ПРАВИЛЬНО!)
+
+✅ Не-Android вопросы (→ COMMON):
+"Какая погода?" → COMMON Чтобы узнать погоду...
+"Привет, как дела?" → COMMON Привет! Хорошо!
+"как растут грибы" → COMMON Грибы растают из...
+
+**ДОСТУПНЫЕ ИНСТРУМЕНТЫ (для COMMON запросов):**
+${toolsDescription}
+
+ФОРМАТ ВЫЗОВА ИНСТРУМЕНТА:
+USE_TOOL: {"name": "имя_инструмента", "args": {"параметры"}}
+
+**КРИТИЧЕСКИ ВАЖНО:**
+- USE_RAG = ТОЛЬКО слово "USE_RAG", НИЧЕГО БОЛЬШЕ! НЕ ПИШИ текст после него!
+- COMMON = в начале ответа, затем продолжай обычный ответ
+- ВСЕГДА делай выбор USE_RAG или COMMON для КАЖДОГО запроса
+- Не пытайся отвечать на Android вопросы сам - используй USE_RAG!
+
+**ПРИМЕРЫ ПРАВИЛЬНЫХ ОТВЕТОВ:**
+
+Android вопрос → просто "USE_RAG" без текста дальше
+Не-Android вопрос → "COMMON [твой ответ]"`;
+
+    if (expectingIncorrectRAG) {
+        promptText += `
+Жалоба на предыдущий ответ → "INCORRECT_RAG_ANSWER"`;
+    }
+
+    return {
+        role: 'system',
+        text: promptText
+    };
+}
+
+/**
+ * System message БЕЗ роутинга RAG (когда RAG выключен)
+ * Обычный чат без упоминания RAG
+ */
+function createSystemMessageWithoutRAG(tools) {
     // Формируем список инструментов с параметрами
     const toolsDescription = tools
         .map(tool => {

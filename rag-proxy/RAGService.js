@@ -116,6 +116,11 @@ class RAGService {
         
         console.log(`[RAGService] ✓ Найдено ${results.length} релевантных уроков`);
         
+        // Выводим уроки с релевантностью
+        lessons.forEach((lesson, i) => {
+            console.log(`[RAGService]   ${i+1}. ${lesson.title} (релевантность: ${lesson.relevance})`);
+        });
+        
         // ЭТАП 2: Генерация ответа через LLM (опционально, если интегрирован с MainServer)
         // Пока просто возвращаем контекст и список уроков
         console.log('[RAGService] [2/2] Подготовка ответа...');
@@ -134,9 +139,10 @@ class RAGService {
      * @param {string} query - Вопрос пользователя
      * @param {Function} llmCallback - Функция для вызова LLM: (messages, tools) => Promise<response>
      * @param {number} topK - Количество релевантных документов
+     * @param {boolean} detectIncorrectRAG - Включить детекцию INCORRECT_RAG_ANSWER?
      * @returns {Promise<Object>} - Результат с сгенерированным ответом
      */
-    async queryWithLLM(query, llmCallback, topK = 3) {
+    async queryWithLLM(query, llmCallback, topK = 3, detectIncorrectRAG = false) {
         console.log(`\n[RAGService] ======================================`);
         console.log(`[RAGService] RAG Pipeline с${this.rerankingEnabled ? ' реранкингом' : 'out реранкинга'}`);
         console.log(`[RAGService] ======================================`);
@@ -169,6 +175,14 @@ class RAGService {
             
             console.log(`[RAGService] ✓ Найдено кандидатов: ${searchResults.length}`);
             
+            // Показываем кандидатов
+            searchResults.slice(0, 5).forEach((r, i) => {
+                console.log(`[RAGService]   ${i+1}. ${r.lesson_title} (${(r.similarity * 100).toFixed(1)}%)`);
+            });
+            if (searchResults.length > 5) {
+                console.log(`[RAGService]   ... и еще ${searchResults.length - 5} кандидатов`);
+            }
+            
             // Этап 2: Реранкинг
             console.log(`[RAGService] Этап 2: Гибридный реранкинг...`);
             const rerankResult = await this.reranker.hybridRerank(
@@ -195,6 +209,12 @@ class RAGService {
             
             console.log(`[RAGService] ✓ Реранкинг завершен: ${rerankResult.results.length} результатов`);
             rerankStats = rerankResult.stats;
+            
+            // Показываем финальные результаты после реранкинга
+            rerankResult.results.forEach((r, i) => {
+                const llmScore = r.llm_score ? ` [LLM: ${r.llm_score}/10]` : '';
+                console.log(`[RAGService]   ${i+1}. ${r.lesson_title} (${(r.similarity * 100).toFixed(1)}%${llmScore})`);
+            });
             
             // Формируем результат из переранжированных документов
             const context = this._buildContext(rerankResult.results);
@@ -230,19 +250,14 @@ class RAGService {
         // Этап 3: Генерация ответа через LLM
         console.log(`[RAGService] Этап 3: Генерация финального ответа...`);
         
-        // ВАЖНО: Детекция INCORRECT_RAG_ANSWER ВСЕГДА ВКЛЮЧЕНА!
-        // LLM НЕ ДОЛЖНА САМА решать релевантен ли ответ - это решает ПОЛЬЗОВАТЕЛЬ!
-        // LLM возвращает INCORRECT_RAG_ANSWER ТОЛЬКО при ЯВНОЙ ЖАЛОБЕ пользователя
-        console.log(`[RAGService] 🔍 Детекция INCORRECT_RAG_ANSWER: ВСЕГДА ВКЛЮЧЕНА`);
-        if (this.demoMode && !this.rerankingEnabled) {
-            console.log(`[RAGService] 🎭 Демо-режим: ответ на основе субоптимальных результатов`);
+        // Детекция INCORRECT_RAG_ANSWER передается как параметр
+        console.log(`[RAGService] 🔍 Детекция INCORRECT_RAG_ANSWER: ${detectIncorrectRAG ? 'ВКЛЮЧЕНА' : 'ВЫКЛЮЧЕНА'}`);
+        if (detectIncorrectRAG) {
             console.log(`[RAGService] 📋 Пользователь может пожаловаться → INCORRECT_RAG_ANSWER → реранкинг`);
-        } else if (!this.rerankingEnabled) {
-            console.log(`[RAGService] 📋 Если пользователь пожалуется → INCORRECT_RAG_ANSWER → реранкинг`);
         }
         
-        // Детекция ВСЕГДА включена!
-        const systemPrompt = createRAGSystemMessage();
+        // Создаем промпт с учетом флага детекции
+        const systemPrompt = createRAGSystemMessage(detectIncorrectRAG);
         const userMessageText = createRAGUserMessage(query, ragResult.context);
         
         console.log('[RAGService] Вызов LLM для генерации ответа...');

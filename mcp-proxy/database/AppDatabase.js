@@ -16,6 +16,9 @@ class AppDatabase {
     }
 
     initializeDatabase() {
+        // Миграция: добавляем rag_metadata если его нет
+        this._migrateRagChatTable();
+        
         // Таблица для хранения сообщений из приложения
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS messages (
@@ -67,6 +70,18 @@ class AppDatabase {
                 temperature_max INTEGER,
                 weather_conditions TEXT
             );
+
+            -- Таблица для истории RAG-чата (чат с курсом)
+            CREATE TABLE IF NOT EXISTS rag_chat (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role TEXT NOT NULL,
+                text TEXT NOT NULL,
+                rag_metadata TEXT,
+                timestamp INTEGER DEFAULT (strftime('%s', 'now')),
+                created_at TEXT DEFAULT (datetime('now', 'localtime'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_rag_chat_timestamp ON rag_chat(timestamp);
 
             -- GitHub данные сохраняются в таблицу messages
             -- Отдельные таблицы для каждого инструмента не нужны!
@@ -308,6 +323,80 @@ class AppDatabase {
     getAllShoes() {
         const stmt = this.db.prepare('SELECT * FROM wardrobe_shoes');
         return stmt.all();
+    }
+
+    // =========================================================================
+    // Миграция базы данных
+    // =========================================================================
+    
+    /**
+     * Миграция: добавить поле rag_metadata в таблицу rag_chat если его нет
+     */
+    _migrateRagChatTable() {
+        try {
+            // Проверяем существует ли таблица
+            const tableExists = this.db.prepare(`
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='rag_chat'
+            `).get();
+            
+            if (tableExists) {
+                // Проверяем есть ли поле rag_metadata
+                const columns = this.db.prepare(`PRAGMA table_info(rag_chat)`).all();
+                const hasRagMetadata = columns.some(col => col.name === 'rag_metadata');
+                
+                if (!hasRagMetadata) {
+                    console.log('[Database] Миграция: добавление поля rag_metadata...');
+                    this.db.exec(`ALTER TABLE rag_chat ADD COLUMN rag_metadata TEXT`);
+                    console.log('[Database] ✓ Поле rag_metadata добавлено');
+                }
+            }
+        } catch (error) {
+            console.error('[Database] Ошибка миграции:', error.message);
+        }
+    }
+
+    // =========================================================================
+    // Методы для работы с историей RAG-чата
+    // =========================================================================
+
+    /**
+     * Получить всю историю RAG-чата
+     */
+    getRagChatHistory() {
+        const stmt = this.db.prepare(`
+            SELECT * FROM rag_chat 
+            ORDER BY timestamp ASC
+        `);
+        return stmt.all();
+    }
+
+    /**
+     * Добавить сообщение в историю RAG-чата
+     * @param {string} role - 'user' или 'assistant'
+     * @param {string} text - Текст сообщения
+     * @param {Object} ragMetadata - Метаданные RAG (ragLessons и т.д.)
+     */
+    addRagChatMessage(role, text, ragMetadata = null) {
+        const stmt = this.db.prepare(`
+            INSERT INTO rag_chat (role, text, rag_metadata)
+            VALUES (?, ?, ?)
+        `);
+        const metadataJson = ragMetadata ? JSON.stringify(ragMetadata) : null;
+        const result = stmt.run(role, text, metadataJson);
+        console.log(`[Database] Добавлено сообщение в RAG-чат: ${role} (id: ${result.lastInsertRowid})`);
+        return { success: true, id: result.lastInsertRowid };
+    }
+
+    /**
+     * Очистить историю RAG-чата
+     */
+    clearRagChatHistory() {
+        const stmt = this.db.prepare(`DELETE FROM rag_chat`);
+        const result = stmt.run();
+        const deleted = result.changes;
+        console.log(`[Database] Очищена история RAG-чата: ${deleted} сообщений`);
+        return { success: true, deleted };
     }
 
     /**
