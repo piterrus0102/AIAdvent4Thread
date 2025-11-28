@@ -50,6 +50,9 @@ class MainServer {
         // Режим работы RAG (включен/выключен)
         this.useRAG = false;
         
+        // Флаг ожидания INCORRECT_RAG_ANSWER (включается после USE_RAG)
+        this.expectingIncorrectRAG = false;
+        
         // Базовые MCP клиенты (local, wardrobe, weather)
         this.mcpClientsPool = {
             local: { name: 'local', client: mcpClient },
@@ -265,8 +268,13 @@ class MainServer {
         // console.log(`[Server] Сообщений в истории: ${messages.length}`);
         // console.log(`[Server] Инструментов: ${tools.map(t => t.name).join(', ')}`);
 
+        // Проверяем - если первое сообщение уже system, не добавляем новый
+        const hasSystemMessage = messages.length > 0 && messages[0].role === 'system';
+        
         // Создаем system message с инструкциями для LLM
-        const systemMessage = customSystemMessage || createSystemMessage(tools);
+        // Передаем флаг useRAG для роутинга и expectingIncorrectRAG для детекции жалоб
+        const systemMessage = customSystemMessage || 
+            (hasSystemMessage ? null : createSystemMessage(tools, this.useRAG, this.expectingIncorrectRAG));
 
         // ===== ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ =====
         // console.log('\n[PITERRUS] ====================================================================================================');
@@ -302,7 +310,7 @@ class MainServer {
             // Первый запрос к HuggingFace
             // NOTE: Qwen использует text-based tool calling через system prompt
             // Используем thinking mode: temperature=0.6, top_p=0.95 (парсинг <think> тегов - опционально)
-            const allMessages = [systemMessage, ...messages];
+            const allMessages = systemMessage ? [systemMessage, ...messages] : messages;
             let currentMessage = await this.huggingFaceClient.callModel(allMessages, 0.6, 2000);
             
             console.log('[Server] ============================================');
@@ -453,7 +461,7 @@ class MainServer {
                 // });
                 // console.log('[PITERRUS] ====================================================================================================\n');
                 
-                const followUpMessages = [systemMessage, ...conversationHistory];
+                const followUpMessages = systemMessage ? [systemMessage, ...conversationHistory] : conversationHistory;
                 currentMessage = await this.huggingFaceClient.callModel(followUpMessages, 0.6, 2000);
                 
                 console.log('[Server] ============================================');
@@ -508,7 +516,8 @@ class MainServer {
             cleanedMessage = cleanedMessage.trim();
             
             // ===== ПРОВЕРКА НА INCORRECT_RAG_ANSWER =====
-            if (cleanedMessage === 'INCORRECT_RAG_ANSWER') {
+            // Детектируется ТОЛЬКО если expectingIncorrectRAG = true (после USE_RAG)
+            if (this.expectingIncorrectRAG && cleanedMessage === 'INCORRECT_RAG_ANSWER') {
                 console.log('\n========================================');
                 console.log('🚨 INCORRECT_RAG_ANSWER ОБНАРУЖЕН!');
                 console.log('========================================');
@@ -516,12 +525,27 @@ class MainServer {
                 console.log('Требуется улучшение релевантности поиска');
                 console.log('========================================\n');
                 
+                // НЕ выключаем флаг - продолжаем детекцию до COMMON
+                
                 return {
                     text: cleanedMessage,
                     toolUsed: null,
                     toolResult: null,
                     incorrectRAG: true
                 };
+            }
+            
+            // ===== ПРОВЕРКА НА COMMON (выключает детекцию INCORRECT_RAG_ANSWER) =====
+            if (this.expectingIncorrectRAG && cleanedMessage.startsWith('COMMON')) {
+                console.log('\n========================================');
+                console.log('✅ COMMON обнаружен - выключаем детекцию INCORRECT_RAG_ANSWER');
+                console.log('========================================\n');
+                
+                // Выключаем детекцию
+                this.expectingIncorrectRAG = false;
+                
+                // Убираем слово COMMON из начала ответа
+                cleanedMessage = cleanedMessage.substring(6).trim();
             }
             
             // Возвращаем результат
@@ -564,104 +588,256 @@ class MainServer {
     async handleMessage(userMessage, messageHistory) {
         try {
             console.log('[Server] Обработка сообщения от приложения...');
-            console.log(`[Server] Режим RAG: ${this.useRAG ? 'ВКЛЮЧЕН' : 'ВЫКЛЮЧЕН'}`);
+            console.log(`[Server] Режим RAG: ${this.useRAG ? 'ВКЛЮЧЕН (с роутингом)' : 'ВЫКЛЮЧЕН'}`);
+            console.log(`[Server] Детекция INCORRECT_RAG_ANSWER: ${this.expectingIncorrectRAG ? 'ВКЛЮЧЕНА' : 'ВЫКЛЮЧЕНА'}`);
             
-            // ===== РЕЖИМ RAG: Векторный поиск + LLM =====
+            // ===== РЕЖИМ RAG: Роутинг USE_RAG / COMMON =====
             if (this.useRAG) {
-                console.log('[Server] 🔍 Использую RAG режим (векторный поиск по курсу)');
+                console.log('[Server] 🔀 Режим RAG роутинга - спрашиваем LLM');
                 
-                try {
-                    const ragResult = await this.answerCourseQuestion(userMessage, 3);
+                // Получаем инструменты (для COMMON запросов)
+                const tools = await this.getToolsForLLM();
+                
+                // Формируем историю сообщений
+                const messages = [
+                    ...messageHistory,
+                    { role: 'user', text: userMessage }
+                ];
+                
+                // Вызываем LLM с роутингом (systemMessage автоматически с RAG роутингом)
+                const routingResponse = await this.callLLM(messages, tools);
+                
+                console.log('[Server] ============================================');
+                console.log('[Server] Ответ LLM (роутинг):');
+                console.log('[Server]', routingResponse.text);
+                console.log('[Server] ============================================');
+                
+                // ===== ДЕТЕКЦИЯ INCORRECT_RAG_ANSWER (на уровне роутинга) =====
+                if (this.expectingIncorrectRAG && routingResponse.text.trim() === 'INCORRECT_RAG_ANSWER') {
+                    console.log('\n========================================');
+                    console.log('🚨 INCORRECT_RAG_ANSWER ОБНАРУЖЕН (в роутинге)!');
+                    console.log('========================================');
+                    console.log('Пользователь недоволен предыдущим ответом.');
+                    console.log('Включаю РЕРАНКИНГ и повторяю поиск...');
+                    console.log('========================================\n');
                     
-                    if (!ragResult.success) {
-                        throw new Error(ragResult.error);
+                    // Находим оригинальный вопрос из истории (последний user message перед жалобой)
+                    let originalQuery = null;
+                    for (let i = messageHistory.length - 1; i >= 0; i--) {
+                        const msg = messageHistory[i];
+                        if (msg.role === 'user' && !msg.text.toLowerCase().includes('не то') 
+                            && !msg.text.toLowerCase().includes('неправильно')
+                            && !msg.text.toLowerCase().includes('ты неправ')) {
+                            originalQuery = msg.text;
+                            console.log(`[Server] 🔍 Найден оригинальный вопрос: "${originalQuery}"`);
+                            break;
+                        }
                     }
                     
-                    // ===== ОБНАРУЖЕН INCORRECT_RAG_ANSWER =====
-                    if (ragResult.incorrectRAG) {
-                        console.log('\n========================================');
-                        console.log('🚨 INCORRECT_RAG_ANSWER ОБНАРУЖЕН!');
-                        console.log('========================================');
-                        console.log('Пользователь недоволен ответом.');
-                        console.log('Включаю РЕРАНКИНГ и повторяю поиск...');
-                        console.log('========================================\n');
-                        
-                        // Находим оригинальный вопрос из истории (последний user message)
-                        let originalQuery = userMessage;
-                        
-                        // Ищем в истории последний вопрос пользователя (не жалобу)
-                        for (let i = messageHistory.length - 1; i >= 0; i--) {
-                            const msg = messageHistory[i];
-                            if (msg.role === 'user' && !msg.text.toLowerCase().includes('неправильно') 
-                                && !msg.text.toLowerCase().includes('не то') 
-                                && !msg.text.toLowerCase().includes('не понял')) {
-                                originalQuery = msg.text;
-                                console.log(`[Server] 🔍 Найден оригинальный вопрос: "${originalQuery}"`);
-                                break;
-                            }
-                        }
-                        
-                        // Включаем реранкинг
-                        this.ragService.setReranking(true);
-                        
-                        // Повторяем поиск с реранкингом
-                        console.log('[Server] 🔄 Повторный запрос С РЕРАНКИНГОМ...');
-                        const improvedResult = await this.answerCourseQuestion(originalQuery, 3);
-                        
-                        // Выключаем реранкинг обратно (только для этого запроса)
-                        this.ragService.setReranking(false);
-                        
-                        if (!improvedResult.success) {
-                            throw new Error(improvedResult.error);
-                        }
-                        
-                        console.log('\n========================================');
-                        console.log('✅ РЕРАНКИНГ ЗАВЕРШЕН');
-                        console.log(`Найдено уроков: ${improvedResult.lessons.length}`);
-                        console.log('========================================\n');
-                        
+                    if (!originalQuery) {
+                        console.error('[Server] ❌ Не удалось найти оригинальный вопрос!');
                         return {
-                            success: true,
-                            message: '🔄 Я провел более тщательный поиск по курсу:\n\n' + improvedResult.answer,
-                            toolUsed: 'RAG (Векторный поиск + Реранкинг)',
-                            toolResult: `РЕРАНКИНГ включен!\nНайдено уроков: ${improvedResult.lessons.length}\n` +
-                                       improvedResult.lessons.map(l => {
-                                           const llmScore = l.llm_score ? ` [LLM: ${l.llm_score}]` : '';
-                                           return `- ${l.title} (${l.relevance}${llmScore})`;
-                                       }).join('\n') +
-                                       (improvedResult.reranking_stats ? 
-                                        `\n\nСтатистика реранкинга:\n- Начальных: ${improvedResult.reranking_stats.initial}\n- После фильтра: ${improvedResult.reranking_stats.after_llm}` 
-                                        : ''),
-                            ragLessons: improvedResult.lessons,
-                            incorrectRAG: false,
-                            rerankingUsed: true
+                            success: false,
+                            error: 'Не удалось найти оригинальный вопрос для реранкинга'
                         };
                     }
                     
-                    // ===== ОБЫЧНЫЙ ОТВЕТ (без INCORRECT_RAG_ANSWER) =====
+                    // Включаем реранкинг
+                    this.ragService.setReranking(true);
+                    
+                    // Повторяем поиск с реранкингом
+                    console.log('[Server] 🔄 Повторный запрос С РЕРАНКИНГОМ...');
+                    const improvedResult = await this.answerCourseQuestion(originalQuery, 3);
+                    
+                    // Выключаем реранкинг обратно
+                    this.ragService.setReranking(false);
+                    
+                    if (!improvedResult.success) {
+                        return {
+                            success: false,
+                            error: improvedResult.error
+                        };
+                    }
+                    
+                    console.log('\n========================================');
+                    console.log('✅ РЕРАНКИНГ ЗАВЕРШЕН');
+                    console.log(`Найдено уроков: ${improvedResult.lessons.length}`);
+                    console.log('========================================\n');
+                    
+                    // ВАЖНО: Выключаем детекцию после реранкинга!
+                    this.expectingIncorrectRAG = false;
+                    console.log('[Server] ✅ Детекция INCORRECT_RAG_ANSWER ВЫКЛЮЧЕНА (реранкинг выполнен)');
+                    
                     return {
                         success: true,
-                        message: ragResult.answer,
-                        toolUsed: 'RAG (Векторный поиск)',
-                        toolResult: `Найдено уроков: ${ragResult.lessons.length}\n` +
-                                   ragResult.lessons.map(l => `- ${l.title} (${l.relevance})`).join('\n'),
-                        ragLessons: ragResult.lessons,
+                        message: '🔄 Я провел более тщательный поиск по курсу:\n\n' + improvedResult.answer,
+                        toolUsed: 'RAG (Векторный поиск + Реранкинг)',
+                        toolResult: `РЕРАНКИНГ включен!\nНайдено уроков: ${improvedResult.lessons.length}\n` +
+                                   improvedResult.lessons.map(l => {
+                                       const llmScore = l.llm_score ? ` [LLM: ${l.llm_score}]` : '';
+                                       return `- ${l.title} (${l.relevance}${llmScore})`;
+                                   }).join('\n') +
+                                   (improvedResult.reranking_stats ? 
+                                    `\n\nСтатистика реранкинга:\n- Начальных: ${improvedResult.reranking_stats.initial}\n- После фильтра: ${improvedResult.reranking_stats.after_llm}` 
+                                    : ''),
+                        ragLessons: improvedResult.lessons,
+                        incorrectRAG: false,
+                        rerankingUsed: true
+                    };
+                }
+                
+                // ===== ДЕТЕКЦИЯ USE_RAG =====
+                if (routingResponse.text.trim().startsWith('USE_RAG')) {
+                    try {
+                        console.log('\n========================================');
+                        console.log('🔍 USE_RAG обнаружен!');
+                        console.log('========================================');
+                        console.log('LLM определила: вопрос про Android разработку');
+                        console.log('Переключаюсь на RAG флоу (векторный поиск)...');
+                        console.log('========================================\n');
+                        
+                        // Включаем детекцию INCORRECT_RAG_ANSWER
+                        this.expectingIncorrectRAG = true;
+                        console.log('[Server] ✅ Детекция INCORRECT_RAG_ANSWER ВКЛЮЧЕНА (до получения COMMON)');
+                        
+                        // Переходим на RAG флоу
+                        const ragResult = await this.answerCourseQuestion(userMessage, 3);
+                        
+                        if (!ragResult.success) {
+                            throw new Error(ragResult.error);
+                        }
+                        
+                        // ===== ОБНАРУЖЕН INCORRECT_RAG_ANSWER =====
+                        if (ragResult.incorrectRAG) {
+                            console.log('\n========================================');
+                            console.log('🚨 INCORRECT_RAG_ANSWER ОБНАРУЖЕН!');
+                            console.log('========================================');
+                            console.log('Пользователь недоволен ответом.');
+                            console.log('Включаю РЕРАНКИНГ и повторяю поиск...');
+                            console.log('========================================\n');
+                            
+                            // Находим оригинальный вопрос из истории (последний user message)
+                            let originalQuery = userMessage;
+                            
+                            // Ищем в истории последний вопрос пользователя (не жалобу)
+                            for (let i = messageHistory.length - 1; i >= 0; i--) {
+                                const msg = messageHistory[i];
+                                if (msg.role === 'user' && !msg.text.toLowerCase().includes('неправильно') 
+                                    && !msg.text.toLowerCase().includes('не то') 
+                                    && !msg.text.toLowerCase().includes('не понял')) {
+                                    originalQuery = msg.text;
+                                    console.log(`[Server] 🔍 Найден оригинальный вопрос: "${originalQuery}"`);
+                                    break;
+                                }
+                            }
+                            
+                            // Включаем реранкинг
+                            this.ragService.setReranking(true);
+                            
+                            // Повторяем поиск с реранкингом
+                            console.log('[Server] 🔄 Повторный запрос С РЕРАНКИНГОМ...');
+                            const improvedResult = await this.answerCourseQuestion(originalQuery, 3);
+                            
+                            // Выключаем реранкинг обратно (только для этого запроса)
+                            this.ragService.setReranking(false);
+                            
+                            if (!improvedResult.success) {
+                                throw new Error(improvedResult.error);
+                            }
+                            
+                            console.log('\n========================================');
+                            console.log('✅ РЕРАНКИНГ ЗАВЕРШЕН');
+                            console.log(`Найдено уроков: ${improvedResult.lessons.length}`);
+                            console.log('========================================\n');
+                            
+                            return {
+                                success: true,
+                                message: '🔄 Я провел более тщательный поиск по курсу:\n\n' + improvedResult.answer,
+                                toolUsed: 'RAG (Векторный поиск + Реранкинг)',
+                                toolResult: `РЕРАНКИНГ включен!\nНайдено уроков: ${improvedResult.lessons.length}\n` +
+                                           improvedResult.lessons.map(l => {
+                                               const llmScore = l.llm_score ? ` [LLM: ${l.llm_score}]` : '';
+                                               return `- ${l.title} (${l.relevance}${llmScore})`;
+                                           }).join('\n') +
+                                           (improvedResult.reranking_stats ? 
+                                            `\n\nСтатистика реранкинга:\n- Начальных: ${improvedResult.reranking_stats.initial}\n- После фильтра: ${improvedResult.reranking_stats.after_llm}` 
+                                            : ''),
+                                ragLessons: improvedResult.lessons,
+                                incorrectRAG: false,
+                                rerankingUsed: true
+                            };
+                        }
+                        
+                        // ===== ОБЫЧНЫЙ ОТВЕТ (без INCORRECT_RAG_ANSWER) =====
+                        return {
+                            success: true,
+                            message: ragResult.answer,
+                            toolUsed: 'RAG (Векторный поиск)',
+                            toolResult: `Найдено уроков: ${ragResult.lessons.length}\n` +
+                                       ragResult.lessons.map(l => `- ${l.title} (${l.relevance})`).join('\n'),
+                            ragLessons: ragResult.lessons,
+                            incorrectRAG: false
+                        };
+                        
+                    } catch (ragError) {
+                        console.error('[Server] ❌ Ошибка RAG флоу:', ragError);
+                        return {
+                            success: false,
+                            error: ragError.message
+                        };
+                    }
+                }
+                
+                // ===== ДЕТЕКЦИЯ COMMON =====
+                if (routingResponse.text.startsWith('COMMON')) {
+                    console.log('\n========================================');
+                    console.log('💬 COMMON обнаружен!');
+                    console.log('========================================');
+                    console.log('LLM определила: НЕ про Android разработку');
+                    console.log('Используем обычный ответ...');
+                    console.log('========================================\n');
+                    
+                    // Выключаем детекцию INCORRECT_RAG_ANSWER (если была включена)
+                    if (this.expectingIncorrectRAG) {
+                        console.log('[Server] ✅ Детекция INCORRECT_RAG_ANSWER ВЫКЛЮЧЕНА');
+                        this.expectingIncorrectRAG = false;
+                    }
+                    
+                    // Убираем слово COMMON из начала ответа
+                    let cleanAnswer = routingResponse.text.substring(6).trim();
+                    
+                    return {
+                        success: true,
+                        message: cleanAnswer,
+                        toolUsed: routingResponse.toolUsed || null,
+                        toolResult: routingResponse.toolResult || null,
                         incorrectRAG: false
                     };
-                    
-                } catch (ragError) {
-                    console.error('[Server] ❌ Ошибка RAG режима:', ragError);
-                    // Fallback на обычный режим если RAG не работает
-                    console.log('[Server] ⚠️ Переключаюсь на обычный режим (fallback)');
                 }
+                
+                // ===== НЕОЖИДАННЫЙ ОТВЕТ (не USE_RAG и не COMMON) =====
+                console.log('\n========================================');
+                console.log('⚠️ НЕОЖИДАННЫЙ ОТВЕТ от LLM!');
+                console.log('========================================');
+                console.log('Ожидали: USE_RAG или COMMON');
+                console.log('Получили:', routingResponse.text.substring(0, 100));
+                console.log('Возвращаем как есть...');
+                console.log('========================================\n');
+                
+                return {
+                    success: true,
+                    message: routingResponse.text,
+                    toolUsed: routingResponse.toolUsed || null,
+                    toolResult: routingResponse.toolResult || null,
+                    incorrectRAG: false
+                };
             }
             
-            // ===== ОБЫЧНЫЙ РЕЖИМ: Прямой запрос к LLM =====
-            console.log('[Server] 💬 Использую обычный режим (прямой запрос к LLM)');
+            // ===== ОБЫЧНЫЙ РЕЖИМ (RAG ВЫКЛЮЧЕН): Прямой запрос к LLM =====
+            console.log('[Server] 💬 Режим RAG выключен - прямой запрос к LLM');
             
             // Получаем инструменты от активного MCP
             const tools = await this.getToolsForLLM();
-            // console.log(`[Server] Получено инструментов: ${tools.length}`);
             
             // Формируем историю сообщений
             const messages = [
@@ -669,7 +845,7 @@ class MainServer {
                 { role: 'user', text: userMessage }
             ];
             
-            // Вызываем LLM
+            // Вызываем LLM (без RAG роутинга)
             const response = await this.callLLM(messages, tools);
             
             return {
@@ -731,16 +907,19 @@ class MainServer {
      */
     async answerCourseQuestion(query, topK = 3) {
         console.log(`[Server] RAG + LLM для вопроса: "${query}"`);
+        console.log(`[Server] Детекция INCORRECT_RAG_ANSWER: ${this.expectingIncorrectRAG ? 'ВКЛЮЧЕНА' : 'ВЫКЛЮЧЕНА'}`);
         
         try {
             // Используем RAG с LLM через callback
+            // Передаем флаг expectingIncorrectRAG для включения детекции в промпте
             const result = await this.ragService.queryWithLLM(
                 query,
                 async (messages, tools) => {
                     // Вызываем LLM через существующий метод
                     return await this.callLLM(messages, tools);
                 },
-                topK
+                topK,
+                this.expectingIncorrectRAG  // Передаем флаг детекции
             );
             
             console.log(`[Server] ✓ Ответ сгенерирован`);

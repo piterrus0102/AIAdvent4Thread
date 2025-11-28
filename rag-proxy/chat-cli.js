@@ -40,6 +40,61 @@ async function sendMessage(message, history = []) {
     return result;
 }
 
+async function loadChatHistory() {
+    const result = await fetchJSON(`${SERVER_URL}/api/rag-chat/history`);
+    return result.history || [];
+}
+
+async function saveChatMessage(role, text, ragMetadata = null) {
+    await fetchJSON(`${SERVER_URL}/api/rag-chat/message`, {
+        method: 'POST',
+        body: JSON.stringify({ role, text, ragMetadata })
+    });
+}
+
+async function clearChatHistory() {
+    await fetchJSON(`${SERVER_URL}/api/rag-chat/clear`, {
+        method: 'DELETE'
+    });
+}
+
+function formatLessonLinks(text, ragLessons) {
+    if (!text || !ragLessons || ragLessons.length === 0) {
+        return text;
+    }
+    
+    let formattedText = text;
+    
+    // Находим все ссылки в формате [LESSON_LINK:id:title]
+    const linkPattern = /\[LESSON_LINK:([^:]+):([^\]]+)\]/g;
+    const links = [];
+    let match;
+    
+    while ((match = linkPattern.exec(text)) !== null) {
+        const lessonId = match[1];
+        const lessonTitle = match[2];
+        
+        // Находим URL для этого урока
+        const lesson = ragLessons.find(l => l.id === lessonId);
+        if (lesson && lesson.url) {
+            const url = `http://localhost:3000${lesson.url}`;
+            // Заменяем на формат: Название - полный URL (терминал сам сделает URL кликабельным)
+            const replacement = chalk.cyan(`${lessonTitle}`) + '\n   ' + chalk.blue.underline(url);
+            links.push({
+                original: match[0],
+                replacement: replacement
+            });
+        }
+    }
+    
+    // Заменяем все найденные ссылки
+    for (const link of links) {
+        formattedText = formattedText.replace(link.original, link.replacement);
+    }
+    
+    return formattedText;
+}
+
 // =============================================================================
 // UI
 // =============================================================================
@@ -78,11 +133,60 @@ async function printStatus() {
 function printHelp() {
     console.log(chalk.cyan('💡 Команды:'));
     console.log(chalk.gray('   /status  - Показать текущий режим сервера'));
+    console.log(chalk.gray('   /history - Показать историю чата'));
     console.log(chalk.gray('   /clear   - Очистить экран'));
+    console.log(chalk.gray('   /reset   - Очистить историю чата в БД'));
     console.log(chalk.gray('   /help    - Показать эту справку'));
     console.log(chalk.gray('   /exit    - Выход'));
     console.log();
     console.log(chalk.yellow('⚠️  Переключение режима RAG делается на сервере командами: rag on/off'));
+    console.log();
+}
+
+async function displayHistory(history) {
+    if (history.length === 0) {
+        console.log(chalk.gray('📭 История чата пуста'));
+        console.log();
+        return;
+    }
+    
+    console.log(chalk.cyan(`📜 История чата (${history.length} сообщений):`));
+    printSeparator();
+    
+    for (const msg of history) {
+        if (msg.role === 'user') {
+            console.log(chalk.bold.green('👤 Вы:'));
+            console.log(chalk.white(msg.text));
+        } else {
+            console.log(chalk.bold.blue('🤖 Ассистент:'));
+            
+            // Если есть метаданные RAG, показываем найденные уроки
+            if (msg.ragMetadata && msg.ragMetadata.ragLessons && msg.ragMetadata.ragLessons.length > 0) {
+                console.log(chalk.green(`📚 Найдено уроков: ${msg.ragMetadata.ragLessons.length}`));
+                msg.ragMetadata.ragLessons.forEach((lesson, idx) => {
+                    const url = lesson.url ? `http://localhost:3000${lesson.url}` : null;
+                    const title = lesson.title;
+                    const relevance = lesson.relevance;
+                    const llmScore = lesson.llm_score ? ` | LLM: ${lesson.llm_score}` : '';
+                    
+                    if (url) {
+                        const clickableLink = `\x1b]8;;${url}\x1b\\${title}\x1b]8;;\x1b\\`;
+                        console.log(chalk.gray(`   ${idx + 1}. `) + chalk.cyan(clickableLink) + chalk.gray(` (${relevance}${llmScore})`));
+                    } else {
+                        console.log(chalk.gray(`   ${idx + 1}. ${title} (${relevance}${llmScore})`));
+                    }
+                });
+                console.log();
+            }
+            
+            // Форматируем ссылки в тексте
+            const formattedText = formatLessonLinks(msg.text, msg.ragMetadata?.ragLessons);
+            console.log(chalk.white(formattedText));
+        }
+        console.log();
+    }
+    
+    printSeparator();
     console.log();
 }
 
@@ -93,6 +197,24 @@ function printHelp() {
 async function main() {
     printHeader();
     await printStatus();
+    
+    // Загружаем историю из БД
+    console.log(chalk.gray('🔄 Загрузка истории чата...'));
+    let historyFromDB = [];
+    try {
+        historyFromDB = await loadChatHistory();
+        console.log(chalk.green(`✓ Загружено ${historyFromDB.length} сообщений из истории`));
+        console.log();
+    } catch (error) {
+        console.log(chalk.yellow('⚠️  Не удалось загрузить историю:', error.message));
+        console.log();
+    }
+    
+    // Отображаем историю если она есть
+    if (historyFromDB.length > 0) {
+        await displayHistory(historyFromDB);
+    }
+    
     printHelp();
     printSeparator();
     console.log();
@@ -103,7 +225,11 @@ async function main() {
         prompt: chalk.bold.cyan('> ')
     });
 
-    const history = [];
+    // Конвертируем историю из БД в формат для LLM
+    const history = historyFromDB.map(msg => ({
+        role: msg.role,
+        text: msg.text
+    }));
 
     rl.prompt();
 
@@ -143,6 +269,30 @@ async function main() {
             return;
         }
 
+        if (query === '/history' || query === 'history') {
+            console.log();
+            const currentHistory = await loadChatHistory();
+            await displayHistory(currentHistory);
+            rl.prompt();
+            return;
+        }
+
+        if (query === '/reset' || query === 'reset') {
+            console.log();
+            console.log(chalk.yellow('🗑️  Очистка истории чата...'));
+            try {
+                await clearChatHistory();
+                // Очищаем локальный массив истории
+                history.length = 0;
+                console.log(chalk.green('✓ История чата очищена'));
+            } catch (error) {
+                console.log(chalk.red(`❌ Ошибка: ${error.message}`));
+            }
+            console.log();
+            rl.prompt();
+            return;
+        }
+
         // Отправка сообщения
         try {
             console.log();
@@ -156,9 +306,20 @@ async function main() {
                 return;
             }
 
-            // Сохраняем в историю
+            // Сохраняем в историю (локальный массив)
             history.push({ role: 'user', text: query });
             history.push({ role: 'assistant', text: result.message });
+            
+            // Сохраняем в БД
+            try {
+                await saveChatMessage('user', query);
+                
+                // Сохраняем ответ с метаданными RAG (если есть)
+                const ragMetadata = result.ragLessons ? { ragLessons: result.ragLessons } : null;
+                await saveChatMessage('assistant', result.message, ragMetadata);
+            } catch (error) {
+                console.log(chalk.yellow(`⚠️  Не удалось сохранить в БД: ${error.message}`));
+            }
 
             // Выводим ответ
             console.log();
@@ -198,36 +359,8 @@ async function main() {
             // Ответ
             console.log(chalk.bold.white('💬 Ответ:'));
             
-            // Обрабатываем специальные ссылки в формате [LESSON_LINK:id:title]
-            let formattedMessage = result.message;
-            
-            // Находим все ссылки в формате [LESSON_LINK:id:title]
-            const linkPattern = /\[LESSON_LINK:([^:]+):([^\]]+)\]/g;
-            const links = [];
-            let match;
-            
-            while ((match = linkPattern.exec(result.message)) !== null) {
-                const lessonId = match[1];
-                const lessonTitle = match[2];
-                
-                // Находим URL для этого урока
-                const lesson = result.ragLessons?.find(l => l.id === lessonId);
-                if (lesson && lesson.url) {
-                    const url = `http://localhost:3000${lesson.url}`;
-                    // Заменяем на формат: Название - полный URL (терминал сам сделает URL кликабельным)
-                    const replacement = chalk.cyan(`${lessonTitle}`) + '\n   ' + chalk.blue.underline(url);
-                    links.push({
-                        original: match[0],
-                        replacement: replacement
-                    });
-                }
-            }
-            
-            // Заменяем все найденные ссылки
-            for (const link of links) {
-                formattedMessage = formattedMessage.replace(link.original, link.replacement);
-            }
-            
+            // Форматируем ссылки в тексте
+            const formattedMessage = formatLessonLinks(result.message, result.ragLessons);
             console.log(chalk.white(formattedMessage));
             
             printSeparator();
